@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose exec:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.claude.com)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(cat:*)",
+      "Bash(wc:*)",
+      "Bash(git remote set-url:*)"
+    ]
+  }
+}
