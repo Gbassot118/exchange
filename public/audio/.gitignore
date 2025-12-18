@@ -1,0 +1,8 @@
+# Ignorer tous les fichiers audio générés
+*.mp3
+*.wav
+*.ogg
+*.m4a
+
+# Mais garder le répertoire dans git
+!.gitignore
