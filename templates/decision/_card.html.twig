@@ -1,0 +1,148 @@
+<div class="bg-white border border-gray-200 rounded-lg p-4 mb-4 decision-card"
+     id="decision-{{ decision.id }}"
+     data-decision-id="{{ decision.id }}">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-3">
+        <div class="flex-1">
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <h4 class="font-semibold text-gray-900">{{ decision.title }}</h4>
+            </div>
+            {% if decision.description %}
+                <p class="text-sm text-gray-600 mt-1">{{ decision.description }}</p>
+            {% endif %}
+        </div>
+        <span class="px-2 py-1 text-xs rounded-full
+            {% if decision.status == 'valide' %}bg-green-100 text-green-700
+            {% elseif decision.status == 'consensus' %}bg-blue-100 text-blue-700
+            {% elseif decision.status == 'en_discussion' %}bg-amber-100 text-amber-700
+            {% else %}bg-gray-100 text-gray-700{% endif %}">
+            {% if decision.status == 'valide' %}Validé
+            {% elseif decision.status == 'consensus' %}Consensus
+            {% elseif decision.status == 'en_discussion' %}En discussion
+            {% elseif decision.status == 'reporte' %}Reporté
+            {% else %}Ouvert{% endif %}
+        </span>
+    </div>
+
+    <!-- Options -->
+    <div class="space-y-2 mb-4">
+        {% set voteStats = decision.voteStats %}
+        {% set totalVotes = decision.votes|length %}
+        {% set currentVote = participant ? decision.getVoteForParticipant(participant) : null %}
+
+        {% for option in decision.options %}
+            {% set optionVotes = voteStats[option.id]|default(0) %}
+            {% set percentage = totalVotes > 0 ? (optionVotes / totalVotes * 100)|round : 0 %}
+            {% set isSelected = decision.selectedOptionId and decision.selectedOptionId.toString == option.id %}
+            {% set isVoted = currentVote and currentVote.optionId.toString == option.id %}
+
+            <div class="relative">
+                {% if decision.isLocked %}
+                    <!-- Locked: show results only -->
+                    <div class="relative rounded-lg border-2 p-3 {{ isSelected ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-gray-50' }}">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                {% if isSelected %}
+                                    <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                    </svg>
+                                {% endif %}
+                                <span class="font-medium {{ isSelected ? 'text-green-700' : 'text-gray-700' }}">{{ option.label }}</span>
+                            </div>
+                            <span class="text-sm {{ isSelected ? 'text-green-600 font-semibold' : 'text-gray-500' }}">
+                                {{ optionVotes }} vote{{ optionVotes > 1 ? 's' : '' }} ({{ percentage }}%)
+                            </span>
+                        </div>
+                        {% if option.description %}
+                            <p class="text-sm text-gray-500 mt-1 ml-7">{{ option.description }}</p>
+                        {% endif %}
+                        <!-- Progress bar -->
+                        <div class="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full {{ isSelected ? 'bg-green-500' : 'bg-blue-400' }} transition-all duration-300"
+                                 style="width: {{ percentage }}%"></div>
+                        </div>
+                    </div>
+                {% else %}
+                    <!-- Open: allow voting -->
+                    <button hx-post="/session/{{ decision.session.id }}/decision/{{ decision.id }}/vote"
+                            hx-vals='{"option_id": "{{ option.id }}"}'
+                            hx-target="#decision-{{ decision.id }}"
+                            hx-swap="outerHTML"
+                            class="w-full text-left rounded-lg border-2 p-3 transition-all cursor-pointer
+                                   {{ isVoted ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50' }}">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center
+                                           {{ isVoted ? 'border-blue-500 bg-blue-500' : 'border-gray-300' }}">
+                                    {% if isVoted %}
+                                        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                        </svg>
+                                    {% endif %}
+                                </span>
+                                <span class="font-medium {{ isVoted ? 'text-blue-700' : 'text-gray-700' }}">{{ option.label }}</span>
+                            </div>
+                            {% if totalVotes > 0 %}
+                                <span class="text-sm text-gray-500">
+                                    {{ optionVotes }} vote{{ optionVotes > 1 ? 's' : '' }}
+                                </span>
+                            {% endif %}
+                        </div>
+                        {% if option.description %}
+                            <p class="text-sm text-gray-500 mt-1 ml-7">{{ option.description }}</p>
+                        {% endif %}
+                        {% if totalVotes > 0 %}
+                            <div class="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div class="h-full bg-blue-400 transition-all duration-300"
+                                     style="width: {{ percentage }}%"></div>
+                            </div>
+                        {% endif %}
+                    </button>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+        <span class="text-xs text-gray-500">
+            {{ totalVotes }} vote{{ totalVotes > 1 ? 's' : '' }} au total
+        </span>
+
+        {% if not decision.isLocked and totalVotes > 0 %}
+            <!-- Validate button (shown when there are votes) -->
+            <div class="flex items-center gap-2">
+                {% set winningOptionId = null %}
+                {% set maxVotes = 0 %}
+                {% for optionId, votes in voteStats %}
+                    {% if votes > maxVotes %}
+                        {% set maxVotes = votes %}
+                        {% set winningOptionId = optionId %}
+                    {% endif %}
+                {% endfor %}
+
+                {% if winningOptionId %}
+                    <button hx-post="/session/{{ decision.session.id }}/decision/{{ decision.id }}/validate"
+                            hx-vals='{"option_id": "{{ winningOptionId }}"}'
+                            hx-target="#decision-{{ decision.id }}"
+                            hx-swap="outerHTML"
+                            hx-confirm="Valider cette décision avec l'option majoritaire ?"
+                            class="px-3 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-md transition-colors">
+                        Valider le choix
+                    </button>
+                {% endif %}
+            </div>
+        {% elseif decision.status == 'valide' %}
+            <span class="flex items-center gap-1 text-xs text-green-600">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+                Arbitrage effectué
+            </span>
+        {% endif %}
+    </div>
+</div>

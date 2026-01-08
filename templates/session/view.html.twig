@@ -1,0 +1,155 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ session.title }} - Documentation Collaborative{% endblock %}
+
+{% block body %}
+<div class="flex h-screen"
+     id="session-container"
+     data-session-id="{{ session.id }}"
+     data-participant-id="{{ participant.id }}">
+
+    <!-- Sidebar - Navigation des documents -->
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col">
+        {% include 'session/_sidebar.html.twig' %}
+    </aside>
+
+    <!-- Zone principale -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 px-6 py-3">
+            {% include 'session/_header.html.twig' %}
+        </header>
+
+        <!-- Contenu du document -->
+        <div class="flex-1 overflow-auto p-6" id="document-content">
+            {% if currentDocument %}
+                {% include 'document/_view.html.twig' with {document: currentDocument} %}
+            {% else %}
+                {% include 'session/_welcome.html.twig' %}
+            {% endif %}
+        </div>
+    </main>
+
+    <!-- Panel annotations -->
+    <aside class="w-80 bg-white border-l border-gray-200 flex flex-col" id="annotations-panel">
+        {% include 'annotation/_panel.html.twig' %}
+    </aside>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+{{ parent() }}
+<script>
+    const sessionId = '{{ session.id }}';
+    const participantId = '{{ participant.id }}';
+    const mercureUrl = '{{ mercure_url }}';
+
+    // Start heartbeat
+    startHeartbeat(sessionId, participantId);
+
+    // Connect to Mercure SSE for real-time updates
+    const topics = [
+        `/sessions/${sessionId}`,
+        `/sessions/${sessionId}/presence`,
+        `/sessions/${sessionId}/documents`,
+        `/sessions/${sessionId}/annotations`
+    ];
+
+    const url = new URL(mercureUrl);
+    topics.forEach(topic => url.searchParams.append('topic', topic));
+
+    const eventSource = new EventSource(url, { withCredentials: false });
+
+    eventSource.onmessage = function(event) {
+        try {
+            const message = JSON.parse(event.data);
+            console.log('SSE Event:', message.type, message.data);
+
+            switch(message.type) {
+                case 'presence.update':
+                    updatePresence(message.data.participants);
+                    break;
+                case 'document.created':
+                    // Refresh document tree in sidebar
+                    const docTree = document.getElementById('document-tree');
+                    if (docTree) {
+                        htmx.ajax('GET', `/session/${sessionId}/document/${message.data.slug || ''}`, {
+                            target: '#document-tree',
+                            swap: 'innerHTML',
+                            select: '#document-tree'
+                        }).catch(e => console.error('Failed to refresh sidebar:', e));
+                    }
+                    break;
+                case 'document.updated':
+                    // Refresh document content if viewing the updated document
+                    const currentDocId = document.body.dataset.currentDocumentId;
+                    const docContent = document.getElementById('document-content');
+                    if (currentDocId && message.data.id === currentDocId && docContent) {
+                        const docSlug = message.data.slug;
+                        if (docSlug) {
+                            htmx.ajax('GET', `/session/${sessionId}/document/${docSlug}`, {
+                                target: '#document-content',
+                                swap: 'innerHTML'
+                            }).catch(e => console.error('Failed to refresh document:', e));
+                        }
+                    }
+                    break;
+                case 'annotation.created':
+                    // Refresh annotations panel if on same document
+                    const annotationsPanel = document.getElementById('annotations-list');
+                    if (annotationsPanel) {
+                        const currentDocId = document.body.dataset.currentDocumentId;
+                        if (!currentDocId || message.data.document_id === currentDocId) {
+                            htmx.ajax('GET', `/session/${sessionId}/annotations?document_id=${message.data.document_id || ''}`, {target: '#annotations-list', swap: 'innerHTML'});
+                        }
+                    }
+                    break;
+            }
+        } catch (e) {
+            console.error('SSE parse error:', e);
+        }
+    };
+
+    eventSource.onerror = function(err) {
+        console.error('SSE connection error:', err);
+    };
+
+    function updatePresence(participants) {
+        const container = document.getElementById('presence-indicator');
+        const countEl = document.getElementById('presence-count');
+        if (!container) return;
+
+        let html = '';
+        participants.forEach(p => {
+            html += `
+                <div class="relative group" title="${p.pseudo}">
+                    <span class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium shadow-sm border-2 border-white"
+                          style="background-color: ${p.color}">
+                        ${p.pseudo.charAt(0).toUpperCase()}
+                    </span>
+                    ${p.is_agent ? `
+                        <span class="absolute -bottom-1 -right-1 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center border border-white">
+                            <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
+                            </svg>
+                        </span>
+                    ` : ''}
+                    <div class="absolute hidden group-hover:block top-full mt-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-20">
+                        ${p.pseudo}${p.is_agent ? ' (Agent IA)' : ''}
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+
+        if (countEl) {
+            countEl.textContent = participants.length + ' connecté(s)';
+        }
+    }
+
+    // Cleanup on page leave
+    window.addEventListener('beforeunload', () => {
+        eventSource.close();
+    });
+</script>
+{% endblock %}

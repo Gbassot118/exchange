@@ -92,6 +92,8 @@ COPY --link --exclude=frankenphp/ . ./
 RUN set -eux; \
 	mkdir -p var/cache var/log; \
 	composer dump-autoload --classmap-authoritative --no-dev; \
-	composer dump-env prod; \
-	composer run-script --no-dev post-install-cmd; \
-	chmod +x bin/console; sync;
+	chmod +x bin/console; \
+	sync;
+
+# Note: cache:clear and assets:install require DATABASE_URL which is only available at runtime
+# The entrypoint handles cache warming and migrations on container start

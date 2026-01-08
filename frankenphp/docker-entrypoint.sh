@@ -30,7 +30,8 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 	# Or about an error in project initialization
 	php bin/console -V
 
-	if grep -q ^DATABASE_URL= .env; then
+	# Check for DATABASE_URL in environment or .env file
+	if [ -n "$DATABASE_URL" ] || grep -q ^DATABASE_URL= .env 2>/dev/null; then
 		echo 'Waiting for database to be ready...'
 		ATTEMPTS_LEFT_TO_REACH_DATABASE=60
 		until [ $ATTEMPTS_LEFT_TO_REACH_DATABASE -eq 0 ] || DATABASE_ERROR=$(php bin/console dbal:run-sql -q "SELECT 1" 2>&1); do
@@ -55,6 +56,14 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 		if [ "$(find ./migrations -iname '*.php' -print -quit)" ]; then
 			php bin/console doctrine:migrations:migrate --no-interaction --all-or-nothing
 		fi
+	fi
+
+	# Warm up cache and install assets in production
+	if [ "$APP_ENV" = 'prod' ]; then
+		echo 'Warming up cache...'
+		php bin/console cache:clear --no-warmup
+		php bin/console cache:warmup
+		php bin/console assets:install --no-interaction
 	fi
 
 	echo 'PHP app ready!'

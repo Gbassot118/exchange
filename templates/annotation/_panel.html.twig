@@ -1,0 +1,75 @@
+<div class="h-full flex flex-col"
+     id="annotations-container">
+
+    <!-- En-tête -->
+    <div class="p-4 border-b border-gray-200">
+        <h3 class="font-semibold text-gray-900">Annotations</h3>
+    </div>
+
+    <!-- Filtres -->
+    <div class="border-b border-gray-200 px-2 py-2">
+        <div class="flex flex-wrap gap-1">
+            <button hx-get="/session/{{ session.id }}/annotations?document_id={{ currentDocument.id|default('') }}"
+                    hx-target="#annotations-list"
+                    hx-swap="innerHTML"
+                    class="px-2 py-1 text-xs font-medium rounded {% if current_filter|default('all') == 'all' %}bg-blue-100 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                Toutes
+            </button>
+            {% for type in ['question', 'objection', 'suggestion', 'comment'] %}
+                <button hx-get="/session/{{ session.id }}/annotations?document_id={{ currentDocument.id|default('') }}&type={{ type }}"
+                        hx-target="#annotations-list"
+                        hx-swap="innerHTML"
+                        class="px-2 py-1 text-xs font-medium rounded {% if current_filter|default('') == type %}bg-blue-100 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                    {{ type|capitalize }}
+                </button>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Liste des annotations -->
+    <div id="annotations-list" class="flex-1 overflow-y-auto">
+        {% for annotation in annotations|default([]) %}
+            {% include 'annotation/_item.html.twig' %}
+        {% else %}
+            <div class="p-4 text-center text-gray-400 text-sm" id="no-annotations-message">
+                Aucune annotation
+            </div>
+        {% endfor %}
+    </div>
+
+    <!-- Formulaire nouvelle annotation -->
+    {% if currentDocument is defined and currentDocument %}
+        <div class="border-t border-gray-200 p-3">
+            <form hx-post="/session/{{ session.id }}/annotation/create"
+                  hx-target="#annotations-list"
+                  hx-swap="afterbegin"
+                  hx-on::after-request="if(event.detail.successful) this.reset(); document.getElementById('no-annotations-message')?.remove();"
+                  class="space-y-2">
+                <input type="hidden" name="document_id" value="{{ currentDocument.id }}">
+
+                <div>
+                    <select name="type" class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border">
+                        <option value="comment">Commentaire</option>
+                        <option value="question">Question</option>
+                        <option value="suggestion">Suggestion</option>
+                        <option value="objection">Objection</option>
+                        <option value="validation">Validation</option>
+                    </select>
+                </div>
+
+                <div>
+                    <textarea name="content"
+                              rows="2"
+                              required
+                              placeholder="Votre annotation..."
+                              class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border resize-none"></textarea>
+                </div>
+
+                <button type="submit"
+                        class="w-full px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">
+                    Ajouter
+                </button>
+            </form>
+        </div>
+    {% endif %}
+</div>

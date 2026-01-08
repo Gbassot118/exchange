@@ -1,0 +1,66 @@
+---
+# Coolify deployment - All services in one compose file
+# Usage: Configure in Coolify with Docker Compose Location: /compose.coolify.yaml
+
+services:
+  php:
+    build:
+      context: .
+      target: frankenphp_prod
+    restart: unless-stopped
+    deploy:
+      update_config:
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        order: stop-first
+    environment:
+      # Force HTTP only - Traefik handles HTTPS termination
+      SERVER_NAME: ":80"
+      APP_ENV: prod
+      APP_SECRET: ${APP_SECRET}
+      TRUSTED_PROXIES: REMOTE_ADDR,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-exchange}?serverVersion=16&charset=utf8
+      MERCURE_URL: http://php/.well-known/mercure
+      MERCURE_PUBLIC_URL: https://${PUBLIC_DOMAIN:-localhost}/.well-known/mercure
+      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET}
+      MERCURE_PUBLISHER_JWT_KEY: ${MERCURE_JWT_SECRET}
+      MERCURE_SUBSCRIBER_JWT_KEY: ${MERCURE_JWT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # URL de base pour la generation des liens
+      DEFAULT_URI: https://${PUBLIC_DOMAIN:-localhost}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    expose:
+      - "80"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:80/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-exchange}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-exchange}", "-U", "${POSTGRES_USER:-app}"]
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  caddy_data:
+  caddy_config:
+  database_data:

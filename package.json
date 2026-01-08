@@ -1,0 +1,13 @@
+{
+  "name": "documentation-collaborative-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for Documentation Collaborative Tool",
+  "main": "mcp-server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node mcp-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

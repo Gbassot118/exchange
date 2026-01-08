@@ -11,7 +11,29 @@
       "WebFetch(domain:platform.openai.com)",
       "Bash(cat:*)",
       "Bash(wc:*)",
-      "Bash(git remote set-url:*)"
+      "Bash(git remote set-url:*)",
+      "Bash(composer show:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_select_option",
+      "Bash(php bin/console:*)",
+      "mcp__playwright__browser_close",
+      "Bash(npm install)",
+      "Bash(timeout 2 node:*)",
+      "mcp__playwright__browser_console_messages",
+      "Bash(curl:*)",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_evaluate",
+      "Bash(jq:*)",
+      "Bash(while read id)",
+      "Bash(do echo \"Suppression de $id\" curl -sk -X DELETE \"https://localhost/api/decisions/$id\" done)",
+      "mcp__playwright__browser_wait_for",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(php -l:*)"
     ]
   }
 }

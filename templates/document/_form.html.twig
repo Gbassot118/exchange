@@ -1,0 +1,78 @@
+<div class="max-w-4xl mx-auto">
+    <h2 class="text-2xl font-bold text-gray-900 mb-6">
+        {% if document is defined and document.id %}
+            Modifier : {{ document.title }}
+        {% else %}
+            Nouveau document
+        {% endif %}
+    </h2>
+
+    <form method="POST"
+          action="{% if document is defined and document.id %}/session/{{ session.id }}/document/{{ document.slug }}/edit{% else %}/session/{{ session.id }}/document/new{% endif %}"
+          class="space-y-6">
+
+        <div>
+            <label for="title" class="block text-sm font-medium text-gray-700">Titre</label>
+            <input type="text"
+                   id="title"
+                   name="title"
+                   value="{{ document.title|default('') }}"
+                   required
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+        </div>
+
+        <div>
+            <label for="type" class="block text-sm font-medium text-gray-700">Type</label>
+            <select id="type"
+                    name="type"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+                <option value="general" {% if document.type|default('general') == 'general' %}selected{% endif %}>Général</option>
+                <option value="synthesis" {% if document.type|default('') == 'synthesis' %}selected{% endif %}>Synthèse</option>
+                <option value="question" {% if document.type|default('') == 'question' %}selected{% endif %}>Question</option>
+                <option value="comparison" {% if document.type|default('') == 'comparison' %}selected{% endif %}>Comparaison</option>
+                <option value="annexe" {% if document.type|default('') == 'annexe' %}selected{% endif %}>Annexe</option>
+                <option value="compte_rendu" {% if document.type|default('') == 'compte_rendu' %}selected{% endif %}>Compte-rendu</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="parent_id" class="block text-sm font-medium text-gray-700">Document parent (optionnel)</label>
+            <select id="parent_id"
+                    name="parent_id"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
+                <option value="">Aucun (document racine)</option>
+                {% for doc in allDocuments|default([]) %}
+                    {% if document is not defined or doc.id != document.id %}
+                        <option value="{{ doc.id }}" {% if document.parent is defined and document.parent and document.parent.id == doc.id %}selected{% endif %}>
+                            {{ doc.title }}
+                        </option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="content" class="block text-sm font-medium text-gray-700">Contenu (Markdown)</label>
+            <textarea id="content"
+                      name="content"
+                      rows="20"
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border font-mono text-sm">{{ document.content|default('') }}</textarea>
+            <p class="mt-1 text-sm text-gray-500">Utilisez la syntaxe Markdown pour formater le contenu.</p>
+        </div>
+
+        <div class="flex justify-end space-x-3">
+            <button type="button"
+                    hx-get="{% if document is defined and document.id %}/session/{{ session.id }}/document/{{ document.slug }}{% else %}/session/{{ session.id }}{% endif %}"
+                    hx-target="#document-content"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                Annuler
+            </button>
+            <button type="submit"
+                    class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <span data-loaded>{% if document is defined and document.id %}Enregistrer{% else %}Créer{% endif %}</span>
+                <span data-loading>Enregistrement...</span>
+            </button>
+        </div>
+    </form>
+</div>

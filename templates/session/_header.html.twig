@@ -1,0 +1,75 @@
+<div class="flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+        <!-- Breadcrumbs si document actif -->
+        {% if currentDocument is defined and currentDocument %}
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2">
+                    <li>
+                        <a href="/session/{{ session.id }}"
+                           hx-get="/session/{{ session.id }}"
+                           hx-target="#document-content"
+                           hx-swap="innerHTML"
+                           class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                            </svg>
+                        </a>
+                    </li>
+                    {% for breadcrumb in currentDocument.breadcrumbs %}
+                        <li class="flex items-center">
+                            <svg class="w-4 h-4 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            {% if loop.last %}
+                                <span class="ml-2 text-sm font-medium text-gray-700">{{ breadcrumb.title }}</span>
+                            {% else %}
+                                <a href="/session/{{ session.id }}/document/{{ breadcrumb.slug }}"
+                                   hx-get="/session/{{ session.id }}/document/{{ breadcrumb.slug }}"
+                                   hx-target="#document-content"
+                                   hx-swap="innerHTML"
+                                   class="ml-2 text-sm text-gray-500 hover:text-gray-700">
+                                    {{ breadcrumb.title }}
+                                </a>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ol>
+            </nav>
+        {% else %}
+            <h1 class="text-lg font-medium text-gray-900">{{ session.title }}</h1>
+        {% endif %}
+    </div>
+
+    <!-- Présence des participants -->
+    <div class="flex items-center space-x-3">
+        <div class="flex -space-x-2" id="presence-indicator">
+            {% include 'session/_presence.html.twig' %}
+        </div>
+
+        <span id="presence-count" class="text-sm text-gray-500">{{ onlineParticipants|length }} connecté(s)</span>
+
+        <!-- Menu session -->
+        <div class="relative" x-data="{ open: false }">
+            <button onclick="this.nextElementSibling.classList.toggle('hidden')"
+                    class="p-2 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                </svg>
+            </button>
+            <div class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border">
+                <a href="/session/{{ session.id }}/export/html"
+                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    Exporter en HTML
+                </a>
+                <a href="/session/{{ session.id }}/export/markdown"
+                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    Exporter en Markdown
+                </a>
+                <hr class="my-1">
+                <a href="/" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                    Quitter la session
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

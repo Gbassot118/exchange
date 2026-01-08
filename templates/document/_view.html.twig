@@ -1,0 +1,100 @@
+<article class="max-w-4xl mx-auto"
+         id="document-{{ document.id }}"
+         data-document-id="{{ document.id }}"
+         data-document-slug="{{ document.slug }}"
+         data-session-id="{{ session.id }}">
+
+    <!-- En-tête du document -->
+    <header class="mb-6" id="document-header">
+        <div class="flex items-center justify-between">
+            <h1 class="text-3xl font-bold text-gray-900">{{ document.title }}</h1>
+            <div class="flex items-center space-x-2">
+                <span class="px-3 py-1 text-sm rounded-full
+                    {% if document.type == 'synthesis' %}bg-blue-100 text-blue-800
+                    {% elseif document.type == 'question' %}bg-amber-100 text-amber-800
+                    {% elseif document.type == 'comparison' %}bg-purple-100 text-purple-800
+                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                    {{ document.type|capitalize }}
+                </span>
+                <button hx-get="/session/{{ session.id }}/document/{{ document.slug }}/edit"
+                        hx-target="#document-content"
+                        hx-swap="innerHTML"
+                        class="p-2 text-gray-400 hover:text-blue-600 rounded hover:bg-gray-100"
+                        title="Modifier">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <p class="text-sm text-gray-500 mt-2">
+            Version {{ document.currentVersion }} -
+            Mis à jour {{ document.updatedAt|date('d/m/Y H:i') }}
+        </p>
+    </header>
+
+    <!-- Contenu Markdown rendu -->
+    <div class="prose prose-lg max-w-none document-content" id="document-body">
+        {{ document.content|markdown_to_html }}
+    </div>
+
+    <!-- Métadonnées spécifiques au type -->
+    {% if document.type == 'question' and document.metadata.options is defined %}
+        {% include 'document/_question_options.html.twig' %}
+    {% endif %}
+
+    {% if document.type == 'comparison' and document.metadata.pros is defined %}
+        {% include 'document/_comparison_table.html.twig' %}
+    {% endif %}
+
+    <!-- Décisions liées au document -->
+    <div id="decisions-container"
+         class="mt-8 pt-6 border-t {% if not decisions|default([])|length %}hidden{% endif %}"
+         hx-ext="sse"
+         sse-connect="{{ mercure_url }}?topic={{ ('/sessions/' ~ session.id ~ '/decisions')|url_encode }}"
+         hx-get="/session/{{ session.id }}/decisions?document_id={{ document.id }}"
+         hx-trigger="sse:decision.created, sse:decision.updated, sse:decision.deleted, sse:decision.status_changed, sse:vote.received"
+         hx-target="#decisions-list"
+         hx-swap="outerHTML">
+        {% include 'decision/_list.html.twig' with {'decisions': decisions|default([]), 'participant': participant} %}
+    </div>
+
+    <!-- Documents enfants -->
+    {% if document.children|length > 0 %}
+        <nav class="mt-8 pt-6 border-t">
+            <h3 class="text-lg font-semibold mb-4">Sous-documents</h3>
+            <ul class="space-y-2">
+                {% for child in document.children %}
+                    <li>
+                        <a href="/session/{{ session.id }}/document/{{ child.slug }}"
+                           hx-get="/session/{{ session.id }}/document/{{ child.slug }}"
+                           hx-target="#document-content"
+                           hx-swap="innerHTML"
+                           hx-push-url="true"
+                           class="flex items-center text-blue-600 hover:underline">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            {{ child.title }}
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        </nav>
+    {% endif %}
+</article>
+
+<script>
+    document.body.dataset.currentDocumentId = '{{ document.id }}';
+
+    // Afficher le conteneur de décisions quand de nouvelles décisions arrivent
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'decisions-list') {
+            const container = document.getElementById('decisions-container');
+            const list = document.getElementById('decisions-list');
+            if (container && list && list.children.length > 0) {
+                container.classList.remove('hidden');
+            }
+        }
+    });
+</script>
