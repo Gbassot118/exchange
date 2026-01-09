@@ -85,16 +85,80 @@
 </article>
 
 <script>
-    document.body.dataset.currentDocumentId = '{{ document.id }}';
+    // Utiliser requestAnimationFrame pour s'assurer que le DOM est complètement rendu
+    requestAnimationFrame(function() {
+        const documentId = '{{ document.id }}';
+        const documentSlug = '{{ document.slug }}';
+        const sessionId = '{{ session.id }}';
 
-    // Afficher le conteneur de décisions quand de nouvelles décisions arrivent
-    document.addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target.id === 'decisions-list') {
-            const container = document.getElementById('decisions-container');
-            const list = document.getElementById('decisions-list');
-            if (container && list && list.children.length > 0) {
-                container.classList.remove('hidden');
+        // Mettre à jour l'ID du document courant
+        const previousDocumentId = document.body.dataset.currentDocumentId;
+        document.body.dataset.currentDocumentId = documentId;
+
+        // Détecter si c'est une navigation HTMX ou un chargement complet de page
+        // Sur un chargement complet, le formulaire d'annotation a déjà le bon document_id
+        // Note: on cherche spécifiquement le formulaire de création (pas les formulaires de réponse)
+        const annotationForm = document.querySelector('#annotations-container form[hx-post$="/annotation/create"]');
+        const hiddenInput = annotationForm ? annotationForm.querySelector('input[name="document_id"]') : null;
+        const isHtmxNavigation = hiddenInput && hiddenInput.value !== documentId;
+
+        // Ne mettre à jour que si c'est une navigation HTMX (pas un chargement initial)
+        if (isHtmxNavigation) {
+            // 1. Mettre à jour la surbrillance dans la sidebar
+            document.querySelectorAll('#document-tree a').forEach(function(link) {
+                link.classList.remove('bg-blue-50', 'text-blue-700');
+                link.classList.add('text-gray-700');
+            });
+            const currentItem = document.querySelector('#doc-item-' + documentId + ' > a');
+            if (currentItem) {
+                currentItem.classList.remove('text-gray-700');
+                currentItem.classList.add('bg-blue-50', 'text-blue-700');
             }
+
+            // 2. Rafraîchir le panneau d'annotations
+            htmx.ajax('GET', '/session/' + sessionId + '/annotations?document_id=' + documentId, {
+                target: '#annotations-list',
+                swap: 'innerHTML'
+            });
+
+            // 3. Mettre à jour le formulaire d'annotation avec le bon document_id
+            if (annotationForm) {
+                // Afficher le conteneur du formulaire (peut être caché si on vient de l'écran d'accueil)
+                const formContainer = annotationForm.parentElement;
+                if (formContainer) {
+                    formContainer.style.display = '';
+                }
+                if (hiddenInput) {
+                    hiddenInput.value = documentId;
+                }
+                annotationForm.setAttribute('hx-post', '/session/' + sessionId + '/annotation/create');
+                htmx.process(annotationForm);
+            }
+
+            // 4. Mettre à jour les filtres d'annotations
+            document.querySelectorAll('#annotations-container .border-b button[hx-get]').forEach(function(btn) {
+                const currentUrl = btn.getAttribute('hx-get');
+                const newUrl = currentUrl.replace(/document_id=[^&]*/, 'document_id=' + documentId);
+                btn.setAttribute('hx-get', newUrl);
+                htmx.process(btn);
+            });
+
+            // 5. Mettre à jour le header/breadcrumb
+            htmx.ajax('GET', '/session/' + sessionId + '/header?document=' + documentSlug, {
+                target: '#session-header',
+                swap: 'innerHTML'
+            });
         }
+
+        // Afficher le conteneur de décisions quand de nouvelles décisions arrivent
+        document.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail.target.id === 'decisions-list') {
+                const container = document.getElementById('decisions-container');
+                const list = document.getElementById('decisions-list');
+                if (container && list && list.children.length > 0) {
+                    container.classList.remove('hidden');
+                }
+            }
+        });
     });
 </script>

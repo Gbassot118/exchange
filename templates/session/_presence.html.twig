@@ -4,17 +4,10 @@
           style="background-color: {{ p.color }}">
         {{ p.pseudo|first|upper }}
     </span>
-    {% if p.isAgent %}
-        <span class="absolute -bottom-1 -right-1 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center border border-white">
-            <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
-            </svg>
-        </span>
-    {% endif %}
 
     <!-- Tooltip -->
     <div class="absolute hidden group-hover:block top-full mt-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-20">
-        {{ p.pseudo }}{% if p.isAgent %} (Agent IA){% endif %}
+        {{ p.pseudo }}
     </div>
 </div>
 {% endfor %}

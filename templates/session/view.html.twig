@@ -16,7 +16,7 @@
     <!-- Zone principale -->
     <main class="flex-1 flex flex-col overflow-hidden">
         <!-- Header -->
-        <header class="bg-white border-b border-gray-200 px-6 py-3">
+        <header class="bg-white border-b border-gray-200 px-6 py-3" id="session-header">
             {% include 'session/_header.html.twig' %}
         </header>
 
@@ -52,7 +52,8 @@
         `/sessions/${sessionId}`,
         `/sessions/${sessionId}/presence`,
         `/sessions/${sessionId}/documents`,
-        `/sessions/${sessionId}/annotations`
+        `/sessions/${sessionId}/annotations`,
+        `/sessions/${sessionId}/decisions`
     ];
 
     const url = new URL(mercureUrl);
@@ -60,54 +61,142 @@
 
     const eventSource = new EventSource(url, { withCredentials: false });
 
-    eventSource.onmessage = function(event) {
-        try {
-            const message = JSON.parse(event.data);
-            console.log('SSE Event:', message.type, message.data);
+    // Helper function to refresh sidebar document tree
+    function refreshDocumentTree() {
+        htmx.ajax('GET', `/session/${sessionId}/sidebar`, {
+            target: '#document-tree',
+            swap: 'innerHTML'
+        }).catch(e => console.error('Failed to refresh document tree:', e));
+    }
 
-            switch(message.type) {
-                case 'presence.update':
-                    updatePresence(message.data.participants);
-                    break;
-                case 'document.created':
-                    // Refresh document tree in sidebar
-                    const docTree = document.getElementById('document-tree');
-                    if (docTree) {
-                        htmx.ajax('GET', `/session/${sessionId}/document/${message.data.slug || ''}`, {
-                            target: '#document-tree',
-                            swap: 'innerHTML',
-                            select: '#document-tree'
-                        }).catch(e => console.error('Failed to refresh sidebar:', e));
-                    }
-                    break;
-                case 'document.updated':
-                    // Refresh document content if viewing the updated document
-                    const currentDocId = document.body.dataset.currentDocumentId;
-                    const docContent = document.getElementById('document-content');
-                    if (currentDocId && message.data.id === currentDocId && docContent) {
-                        const docSlug = message.data.slug;
-                        if (docSlug) {
-                            htmx.ajax('GET', `/session/${sessionId}/document/${docSlug}`, {
-                                target: '#document-content',
-                                swap: 'innerHTML'
-                            }).catch(e => console.error('Failed to refresh document:', e));
-                        }
-                    }
-                    break;
-                case 'annotation.created':
-                    // Refresh annotations panel if on same document
-                    const annotationsPanel = document.getElementById('annotations-list');
-                    if (annotationsPanel) {
-                        const currentDocId = document.body.dataset.currentDocumentId;
-                        if (!currentDocId || message.data.document_id === currentDocId) {
-                            htmx.ajax('GET', `/session/${sessionId}/annotations?document_id=${message.data.document_id || ''}`, {target: '#annotations-list', swap: 'innerHTML'});
-                        }
-                    }
-                    break;
-            }
-        } catch (e) {
-            console.error('SSE parse error:', e);
+    // Helper function to refresh current document content
+    function refreshCurrentDocument(docId, docSlug) {
+        const currentDocId = document.body.dataset.currentDocumentId;
+        if (currentDocId && docId === currentDocId && docSlug) {
+            htmx.ajax('GET', `/session/${sessionId}/document/${docSlug}`, {
+                target: '#document-content',
+                swap: 'innerHTML'
+            }).catch(e => console.error('Failed to refresh document:', e));
         }
+    }
+
+    // Helper function to refresh annotations panel
+    function refreshAnnotations(docId) {
+        const annotationsPanel = document.getElementById('annotations-list');
+        if (annotationsPanel) {
+            const currentDocId = document.body.dataset.currentDocumentId;
+            if (!currentDocId || docId === currentDocId) {
+                htmx.ajax('GET', `/session/${sessionId}/annotations?document_id=${docId || ''}`, {
+                    target: '#annotations-list',
+                    swap: 'innerHTML'
+                }).catch(e => console.error('Failed to refresh annotations:', e));
+            }
+        }
+    }
+
+    // Handle SSE event (named events use addEventListener, not onmessage)
+    function handleSSEEvent(eventType, handler) {
+        eventSource.addEventListener(eventType, function(event) {
+            try {
+                const message = JSON.parse(event.data);
+                handler(message.data);
+            } catch (e) {
+                console.error('SSE parse error for', eventType, ':', e);
+            }
+        });
+    }
+
+    // Presence updates
+    handleSSEEvent('presence.update', (data) => {
+        updatePresence(data.participants);
+    });
+
+    // Document events
+    handleSSEEvent('document.created', (data) => {
+        refreshDocumentTree();
+        // Remove "Aucun document" message if present
+        const emptyMsg = document.getElementById('empty-docs-message');
+        if (emptyMsg) emptyMsg.remove();
+    });
+
+    handleSSEEvent('document.updated', (data) => {
+        refreshDocumentTree();
+        refreshCurrentDocument(data.id, data.slug);
+    });
+
+    handleSSEEvent('document.deleted', (data) => {
+        refreshDocumentTree();
+        // If viewing deleted document, show welcome screen
+        const currentDocId = document.body.dataset.currentDocumentId;
+        if (currentDocId && data.id === currentDocId) {
+            htmx.ajax('GET', `/session/${sessionId}`, {
+                target: '#document-content',
+                swap: 'innerHTML',
+                select: '#document-content'
+            });
+        }
+    });
+
+    // Annotation events
+    handleSSEEvent('annotation.created', (data) => {
+        refreshAnnotations(data.document_id);
+    });
+
+    handleSSEEvent('annotation.updated', (data) => {
+        refreshAnnotations(data.document_id);
+    });
+
+    handleSSEEvent('annotation.resolved', (data) => {
+        refreshAnnotations(data.document_id);
+    });
+
+    // Decision events - refresh decisions list for current document
+    function refreshDecisions(documentId) {
+        const currentDocId = document.body.dataset.currentDocumentId;
+        const decisionsContainer = document.getElementById('decisions-container');
+        const decisionsList = document.getElementById('decisions-list');
+
+        // Only refresh if viewing the same document or if documentId matches
+        if (decisionsContainer && (documentId === currentDocId || !documentId)) {
+            // Show container if hidden
+            decisionsContainer.classList.remove('hidden');
+
+            htmx.ajax('GET', `/session/${sessionId}/decisions?document_id=${currentDocId || ''}`, {
+                target: '#decisions-list',
+                swap: 'outerHTML'
+            }).catch(e => console.error('Failed to refresh decisions:', e));
+        }
+    }
+
+    handleSSEEvent('decision.created', (data) => {
+        refreshDecisions(data.document_id);
+    });
+
+    handleSSEEvent('decision.updated', (data) => {
+        refreshDecisions(data.document_id);
+    });
+
+    handleSSEEvent('decision.deleted', (data) => {
+        refreshDecisions(data.document_id);
+    });
+
+    handleSSEEvent('decision.status_changed', (data) => {
+        refreshDecisions(data.linked_document_id);
+    });
+
+    handleSSEEvent('vote.received', (data) => {
+        refreshDecisions(null); // Refresh all since vote doesn't include document_id
+    });
+
+    // Session status change
+    handleSSEEvent('session.status_changed', (data) => {
+        // Reload the page to update status indicators
+        window.location.reload();
+    });
+
+    // Fallback for unnamed events (shouldn't happen with our Mercure setup)
+    eventSource.onmessage = function(event) {
+        // Ignored - all events should be named
     };
 
     eventSource.onerror = function(err) {
@@ -127,15 +216,8 @@
                           style="background-color: ${p.color}">
                         ${p.pseudo.charAt(0).toUpperCase()}
                     </span>
-                    ${p.is_agent ? `
-                        <span class="absolute -bottom-1 -right-1 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center border border-white">
-                            <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
-                            </svg>
-                        </span>
-                    ` : ''}
                     <div class="absolute hidden group-hover:block top-full mt-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-20">
-                        ${p.pseudo}${p.is_agent ? ' (Agent IA)' : ''}
+                        ${p.pseudo}
                     </div>
                 </div>
             `;

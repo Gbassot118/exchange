@@ -33,7 +33,10 @@
       "mcp__playwright__browser_wait_for",
       "Bash(ls:*)",
       "Bash(xargs:*)",
-      "Bash(php -l:*)"
+      "Bash(php -l:*)",
+      "mcp__playwright__browser_run_code",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_tabs"
     ]
   }
 }

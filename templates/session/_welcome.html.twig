@@ -1,4 +1,4 @@
-<div class="max-w-2xl mx-auto text-center py-12">
+<div class="max-w-2xl mx-auto text-center py-12" id="welcome-screen">
     <svg class="mx-auto h-16 w-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
     </svg>
@@ -35,3 +35,53 @@
         </div>
     </div>
 </div>
+
+<script>
+    // Utiliser requestAnimationFrame pour s'assurer que le DOM est complètement rendu
+    requestAnimationFrame(function() {
+        const sessionId = '{{ session.id }}';
+
+        // Détecter si c'est une navigation HTMX ou un chargement complet de page
+        // Sur un chargement complet, le formulaire n'a pas de document_id défini
+        // Note: on cherche spécifiquement le formulaire de création (pas les formulaires de réponse)
+        const annotationForm = document.querySelector('#annotations-container form[hx-post$="/annotation/create"]');
+        const hiddenInput = annotationForm ? annotationForm.querySelector('input[name="document_id"]') : null;
+        const isHtmxNavigation = hiddenInput && hiddenInput.value !== '';
+
+        // Effacer l'ID du document courant
+        delete document.body.dataset.currentDocumentId;
+
+        // Ne mettre à jour que si c'est une navigation HTMX (pas un chargement initial)
+        if (isHtmxNavigation) {
+            // 1. Retirer la surbrillance de tous les documents dans la sidebar
+            document.querySelectorAll('#document-tree a').forEach(function(link) {
+                link.classList.remove('bg-blue-50', 'text-blue-700');
+                link.classList.add('text-gray-700');
+            });
+
+            // 2. Vider le panneau d'annotations et afficher le message "Aucune annotation"
+            const annotationsList = document.getElementById('annotations-list');
+            if (annotationsList) {
+                annotationsList.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm" id="no-annotations-message">Aucune annotation</div>';
+            }
+
+            // 3. Masquer le formulaire d'annotation (car aucun document sélectionné)
+            if (annotationForm) {
+                const formContainer = annotationForm.parentElement;
+                if (formContainer) {
+                    formContainer.style.display = 'none';
+                }
+                // Vider le document_id
+                if (hiddenInput) {
+                    hiddenInput.value = '';
+                }
+            }
+
+            // 4. Mettre à jour le header (sans document)
+            htmx.ajax('GET', '/session/' + sessionId + '/header', {
+                target: '#session-header',
+                swap: 'innerHTML'
+            });
+        }
+    });
+</script>

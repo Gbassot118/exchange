@@ -20,6 +20,7 @@ ai:
                 - 'App\AI\Tool\DocumentTool'
                 - 'App\AI\Tool\AnnotationTool'
                 - 'App\AI\Tool\SessionStatusTool'
+                - 'App\AI\Tool\SessionInviteTool'
             prompt: |
                 You are a documentation assistant specialized in collaborative refinement sessions.
 

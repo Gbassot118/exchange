@@ -11,91 +11,110 @@
         </div>
 
         <div class="bg-white rounded-lg shadow-md p-6 space-y-6">
-            <!-- Créer une session -->
-            <div>
-                <h2 class="text-lg font-semibold text-gray-800 mb-3">Créer une nouvelle session</h2>
-                <form method="POST"
-                      action="/session/create"
-                      class="space-y-3">
-                    <div>
-                        <label for="title" class="block text-sm font-medium text-gray-700">Titre de la session</label>
-                        <input type="text"
-                               id="title"
-                               name="title"
-                               required
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
-                               placeholder="Ex: Refinement Sprint 42">
-                    </div>
-                    <div>
-                        <label for="pseudo" class="block text-sm font-medium text-gray-700">Votre pseudo</label>
-                        <input type="text"
-                               id="pseudo"
-                               name="pseudo"
-                               required
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
-                               placeholder="Ex: Jean">
-                    </div>
-                    <button type="submit"
-                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                        <span data-loaded>Créer la session</span>
-                        <span data-loading>Création...</span>
-                    </button>
-                </form>
-            </div>
-
-            <div class="relative">
-                <div class="absolute inset-0 flex items-center">
-                    <div class="w-full border-t border-gray-300"></div>
+            {% if invite_code %}
+                <!-- Rejoindre via lien d'invitation -->
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3">Rejoindre la session</h2>
+                    <p class="text-sm text-gray-600 mb-4">Vous avez reçu un lien d'invitation. Entrez simplement votre pseudo pour rejoindre.</p>
+                    <form method="POST"
+                          action="/session/join"
+                          class="space-y-3">
+                        <input type="hidden" name="invite_code" value="{{ invite_code }}">
+                        <div>
+                            <label for="join_pseudo" class="block text-sm font-medium text-gray-700">Votre pseudo</label>
+                            <input type="text"
+                                   id="join_pseudo"
+                                   name="pseudo"
+                                   required
+                                   autofocus
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
+                                   placeholder="Ex: Marie">
+                        </div>
+                        <button type="submit"
+                                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            <span data-loaded>Rejoindre</span>
+                            <span data-loading>Connexion...</span>
+                        </button>
+                    </form>
                 </div>
-                <div class="relative flex justify-center text-sm">
-                    <span class="px-2 bg-white text-gray-500">ou</span>
+            {% else %}
+                <!-- Créer une session -->
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3">Créer une nouvelle session</h2>
+                    <form method="POST"
+                          action="/session/create"
+                          class="space-y-3">
+                        <div>
+                            <label for="title" class="block text-sm font-medium text-gray-700">Titre de la session</label>
+                            <input type="text"
+                                   id="title"
+                                   name="title"
+                                   required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
+                                   placeholder="Ex: Refinement Sprint 42">
+                        </div>
+                        <div>
+                            <label for="pseudo" class="block text-sm font-medium text-gray-700">Votre pseudo</label>
+                            <input type="text"
+                                   id="pseudo"
+                                   name="pseudo"
+                                   required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
+                                   placeholder="Ex: Jean">
+                        </div>
+                        <button type="submit"
+                                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            <span data-loaded>Créer la session</span>
+                            <span data-loading>Création...</span>
+                        </button>
+                    </form>
                 </div>
-            </div>
 
-            <!-- Rejoindre une session -->
-            <div>
-                <h2 class="text-lg font-semibold text-gray-800 mb-3">Rejoindre une session</h2>
-                {% if sessions|length > 0 %}
-                <form method="POST"
-                      action="/session/join"
-                      class="space-y-3">
-                    <div>
-                        <label for="session_id" class="block text-sm font-medium text-gray-700">Session</label>
-                        <select id="session_id"
-                                name="session_id"
-                                required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border">
-                            <option value="">-- Choisir une session --</option>
-                            {% for session in sessions %}
-                                <option value="{{ session.id }}">
-                                    {{ session.title }} ({{ session.status }}) - {{ session.participants|length }} participant(s)
-                                </option>
-                            {% endfor %}
-                        </select>
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-300"></div>
                     </div>
-                    <div>
-                        <label for="join_pseudo" class="block text-sm font-medium text-gray-700">Votre pseudo</label>
-                        <input type="text"
-                               id="join_pseudo"
-                               name="pseudo"
-                               required
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
-                               placeholder="Ex: Marie">
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-white text-gray-500">ou</span>
                     </div>
-                    <button type="submit"
-                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                        <span data-loaded>Rejoindre</span>
-                        <span data-loading>Connexion...</span>
-                    </button>
-                </form>
-                {% else %}
-                <p class="text-gray-500 text-sm text-center py-4">Aucune session disponible. Créez-en une nouvelle !</p>
-                {% endif %}
-            </div>
+                </div>
+
+                <!-- Rejoindre une session -->
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800 mb-3">Rejoindre une session</h2>
+                    <form method="POST"
+                          action="/session/join"
+                          class="space-y-3">
+                        <div>
+                            <label for="invite_code" class="block text-sm font-medium text-gray-700">Code d'invitation</label>
+                            <input type="text"
+                                   id="invite_code"
+                                   name="invite_code"
+                                   required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border font-mono"
+                                   placeholder="Ex: a1b2c3d4e5f6...">
+                        </div>
+                        <div>
+                            <label for="join_pseudo_manual" class="block text-sm font-medium text-gray-700">Votre pseudo</label>
+                            <input type="text"
+                                   id="join_pseudo_manual"
+                                   name="pseudo"
+                                   required
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border"
+                                   placeholder="Ex: Marie">
+                        </div>
+                        <button type="submit"
+                                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            <span data-loaded>Rejoindre</span>
+                            <span data-loading>Connexion...</span>
+                        </button>
+                    </form>
+                </div>
+            {% endif %}
         </div>
 
         <p class="text-center text-sm text-gray-500">
-            Outil de documentation collaborative avec IA
+            Outil de documentation collaborative
         </p>
     </div>
 </div>

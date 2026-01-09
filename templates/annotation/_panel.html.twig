@@ -37,39 +37,37 @@
         {% endfor %}
     </div>
 
-    <!-- Formulaire nouvelle annotation -->
-    {% if currentDocument is defined and currentDocument %}
-        <div class="border-t border-gray-200 p-3">
-            <form hx-post="/session/{{ session.id }}/annotation/create"
-                  hx-target="#annotations-list"
-                  hx-swap="afterbegin"
-                  hx-on::after-request="if(event.detail.successful) this.reset(); document.getElementById('no-annotations-message')?.remove();"
-                  class="space-y-2">
-                <input type="hidden" name="document_id" value="{{ currentDocument.id }}">
+    <!-- Formulaire nouvelle annotation (toujours rendu, caché si pas de document) -->
+    <div class="border-t border-gray-200 p-3" {% if not (currentDocument is defined and currentDocument) %}style="display: none;"{% endif %}>
+        <form hx-post="/session/{{ session.id }}/annotation/create"
+              hx-target="#annotations-list"
+              hx-swap="afterbegin"
+              hx-on::after-request="if(event.detail.successful) this.reset(); document.getElementById('no-annotations-message')?.remove();"
+              class="space-y-2">
+            <input type="hidden" name="document_id" value="{{ currentDocument.id|default('') }}">
 
-                <div>
-                    <select name="type" class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border">
-                        <option value="comment">Commentaire</option>
-                        <option value="question">Question</option>
-                        <option value="suggestion">Suggestion</option>
-                        <option value="objection">Objection</option>
-                        <option value="validation">Validation</option>
-                    </select>
-                </div>
+            <div>
+                <select name="type" class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border">
+                    <option value="comment">Commentaire</option>
+                    <option value="question">Question</option>
+                    <option value="suggestion">Suggestion</option>
+                    <option value="objection">Objection</option>
+                    <option value="validation">Validation</option>
+                </select>
+            </div>
 
-                <div>
-                    <textarea name="content"
-                              rows="2"
-                              required
-                              placeholder="Votre annotation..."
-                              class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border resize-none"></textarea>
-                </div>
+            <div>
+                <textarea name="content"
+                          rows="2"
+                          required
+                          placeholder="Votre annotation..."
+                          class="w-full text-sm border-gray-300 rounded-md px-2 py-1 border resize-none"></textarea>
+            </div>
 
-                <button type="submit"
-                        class="w-full px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">
-                    Ajouter
-                </button>
-            </form>
-        </div>
-    {% endif %}
+            <button type="submit"
+                    class="w-full px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">
+                Ajouter
+            </button>
+        </form>
+    </div>
 </div>

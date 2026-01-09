@@ -1,0 +1,7 @@
+{% for doc in documents %}
+    {% include 'session/_document_item.html.twig' with {document: doc, level: 0} %}
+{% else %}
+    <li class="px-2 py-4 text-center text-gray-400 text-sm" id="empty-docs-message">
+        Aucun document
+    </li>
+{% endfor %}

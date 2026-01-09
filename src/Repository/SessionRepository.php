@@ -68,18 +68,4 @@ class SessionRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /**
-     * Find sessions that can be joined (not archived)
-     * @return Session[]
-     */
-    public function findActiveSessionsForJoin(): array
-    {
-        return $this->createQueryBuilder('s')
-            ->where('s.status != :archived')
-            ->setParameter('archived', Session::STATUS_ARCHIVE)
-            ->orderBy('s.createdAt', 'DESC')
-            ->setMaxResults(50)
-            ->getQuery()
-            ->getResult();
-    }
 }

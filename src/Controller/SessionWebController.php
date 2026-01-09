@@ -11,6 +11,7 @@ use App\Repository\SessionRepository;
 use App\Service\Annotation\AnnotationService;
 use App\Service\Decision\DecisionService;
 use App\Service\Document\DocumentService;
+use App\Service\Export\ExportService;
 use App\Service\Session\SessionService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -31,15 +32,16 @@ class SessionWebController extends AbstractController
         private readonly DocumentService $documentService,
         private readonly AnnotationService $annotationService,
         private readonly DecisionService $decisionService,
+        private readonly ExportService $exportService,
     ) {}
 
     #[Route('/', name: 'home')]
-    public function home(): Response
+    public function home(Request $request): Response
     {
-        $sessions = $this->sessionRepository->findActiveSessionsForJoin();
+        $inviteCode = $request->query->get('code');
 
         return $this->render('home.html.twig', [
-            'sessions' => $sessions,
+            'invite_code' => $inviteCode,
         ]);
     }
 
@@ -66,23 +68,18 @@ class SessionWebController extends AbstractController
     #[Route('/session/join', name: 'session_join', methods: ['POST'])]
     public function join(Request $request, SessionInterface $httpSession): Response
     {
-        $sessionId = $request->request->get('session_id');
+        $inviteCode = $request->request->get('invite_code');
         $pseudo = $request->request->get('pseudo');
 
-        if (empty($sessionId) || empty($pseudo)) {
-            $this->addFlash('error', 'La session et le pseudo sont requis');
+        if (empty($inviteCode) || empty($pseudo)) {
+            $this->addFlash('error', 'Le code d\'invitation et le pseudo sont requis');
             return $this->redirectToRoute('home');
         }
 
-        try {
-            $session = $this->sessionRepository->find(Uuid::fromString($sessionId));
-        } catch (\InvalidArgumentException $e) {
-            $this->addFlash('error', 'Session invalide');
-            return $this->redirectToRoute('home');
-        }
+        $session = $this->sessionRepository->findByInviteCode($inviteCode);
 
         if ($session === null) {
-            $this->addFlash('error', 'Session non trouvée');
+            $this->addFlash('error', 'Code d\'invitation invalide');
             return $this->redirectToRoute('home');
         }
 
@@ -102,31 +99,25 @@ class SessionWebController extends AbstractController
     #[Route('/session/{id}', name: 'session_view')]
     public function view(string $id, Request $request, SessionInterface $httpSession): Response
     {
-        try {
-            $session = $this->sessionRepository->find(Uuid::fromString($id));
-        } catch (\InvalidArgumentException $e) {
-            throw $this->createNotFoundException('Session non trouvée');
-        }
+        $session = $this->getSessionOrFail($id);
 
-        if ($session === null) {
-            throw $this->createNotFoundException('Session non trouvée');
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
         }
-
-        $participantId = $httpSession->get('participant_id');
-        if (empty($participantId)) {
-            return $this->redirectToRoute('home');
-        }
-
-        $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-        if ($participant === null || $participant->getSession()->getId()->toString() !== $id) {
-            $httpSession->remove('participant_id');
-            return $this->redirectToRoute('home');
-        }
+        $participant = $participantOrRedirect;
 
         $documents = $this->documentRepository->findRootDocuments($session);
         $onlineParticipants = $this->sessionService->getOnlineParticipants($session);
 
         $mercureUrl = $this->getParameter('mercure.public_url') ?? 'https://localhost/.well-known/mercure';
+
+        // Si c'est une requête HTMX, retourner seulement le contenu partiel (écran d'accueil)
+        if ($request->headers->has('HX-Request')) {
+            return $this->render('session/_welcome.html.twig', [
+                'session' => $session,
+            ]);
+        }
 
         return $this->render('session/view.html.twig', [
             'session' => $session,
@@ -143,7 +134,11 @@ class SessionWebController extends AbstractController
     public function newDocument(string $id, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         if ($request->isMethod('POST')) {
             $data = [
@@ -176,7 +171,11 @@ class SessionWebController extends AbstractController
     public function viewDocument(string $id, string $slug, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $document = $this->documentRepository->findOneBySessionAndSlug($session, $slug);
         if ($document === null) {
@@ -221,7 +220,11 @@ class SessionWebController extends AbstractController
     public function editDocument(string $id, string $slug, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $document = $this->documentRepository->findOneBySessionAndSlug($session, $slug);
         if ($document === null) {
@@ -259,7 +262,11 @@ class SessionWebController extends AbstractController
     public function createAnnotation(string $id, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $documentId = $request->request->get('document_id');
         $content = $request->request->get('content');
@@ -293,7 +300,11 @@ class SessionWebController extends AbstractController
     public function annotations(string $id, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $documentId = $request->query->get('document_id');
         $type = $request->query->get('type');
@@ -321,11 +332,56 @@ class SessionWebController extends AbstractController
         ]);
     }
 
+    #[Route('/session/{id}/sidebar', name: 'session_sidebar')]
+    public function sidebar(string $id, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+
+        $documents = $this->documentRepository->findRootDocuments($session);
+
+        return $this->render('session/_document_tree.html.twig', [
+            'session' => $session,
+            'documents' => $documents,
+        ]);
+    }
+
+    #[Route('/session/{id}/header', name: 'session_header')]
+    public function header(string $id, Request $request, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+
+        $currentDocument = null;
+        $documentSlug = $request->query->get('document');
+        if ($documentSlug) {
+            $currentDocument = $this->documentRepository->findOneBySessionAndSlug($session, $documentSlug);
+        }
+
+        $onlineParticipants = $this->sessionService->getOnlineParticipants($session);
+
+        return $this->render('session/_header.html.twig', [
+            'session' => $session,
+            'currentDocument' => $currentDocument,
+            'onlineParticipants' => $onlineParticipants,
+        ]);
+    }
+
     #[Route('/session/{id}/decisions', name: 'session_decisions')]
     public function decisions(string $id, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $documentId = $request->query->get('document_id');
 
@@ -350,7 +406,11 @@ class SessionWebController extends AbstractController
     public function voteDecision(string $id, string $decisionId, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $decision = $this->decisionRepository->find(Uuid::fromString($decisionId));
         if ($decision === null || $decision->getSession()->getId()->toString() !== $id) {
@@ -379,7 +439,11 @@ class SessionWebController extends AbstractController
     public function validateDecision(string $id, string $decisionId, Request $request, SessionInterface $httpSession): Response
     {
         $session = $this->getSessionOrFail($id);
-        $participant = $this->getParticipantOrFail($httpSession, $session);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
 
         $decision = $this->decisionRepository->find(Uuid::fromString($decisionId));
         if ($decision === null || $decision->getSession()->getId()->toString() !== $id) {
@@ -404,6 +468,53 @@ class SessionWebController extends AbstractController
         ]);
     }
 
+    #[Route('/session/{id}/export/markdown', name: 'session_export_markdown')]
+    public function exportMarkdown(string $id, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+
+        $markdown = $this->exportService->exportToMarkdown($session);
+
+        $filename = $this->sanitizeFilename($session->getTitle()) . '.md';
+
+        $response = new Response($markdown);
+        $response->headers->set('Content-Type', 'text/markdown; charset=utf-8');
+        $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+
+        return $response;
+    }
+
+    #[Route('/session/{id}/export/html', name: 'session_export_html')]
+    public function exportHtml(string $id, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+
+        $html = $this->exportService->exportToHtml($session);
+
+        $filename = $this->sanitizeFilename($session->getTitle()) . '.html';
+
+        $response = new Response($html);
+        $response->headers->set('Content-Type', 'text/html; charset=utf-8');
+        $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+
+        return $response;
+    }
+
+    private function sanitizeFilename(string $filename): string
+    {
+        $filename = preg_replace('/[^a-zA-Z0-9\-_\s]/', '', $filename);
+        $filename = preg_replace('/\s+/', '_', $filename);
+        return mb_substr($filename, 0, 50);
+    }
+
     private function getSessionOrFail(string $id): Session
     {
         try {
@@ -419,23 +530,34 @@ class SessionWebController extends AbstractController
         return $session;
     }
 
-    private function getParticipantOrFail(SessionInterface $httpSession, Session $session): \App\Entity\Participant
+    private function tryGetParticipant(SessionInterface $httpSession, Session $session): ?\App\Entity\Participant
     {
         $participantId = $httpSession->get('participant_id');
         if (empty($participantId)) {
-            throw $this->createAccessDeniedException('Non authentifié');
+            return null;
         }
 
         try {
             $participant = $this->participantRepository->find(Uuid::fromString($participantId));
         } catch (\InvalidArgumentException $e) {
-            throw $this->createAccessDeniedException('Participant invalide');
+            return null;
         }
 
         if ($participant === null || $participant->getSession()->getId()->toString() !== $session->getId()->toString()) {
-            throw $this->createAccessDeniedException('Non autorisé pour cette session');
+            return null;
         }
 
+        return $participant;
+    }
+
+    private function getParticipantOrRedirect(SessionInterface $httpSession, Session $session): \App\Entity\Participant|Response
+    {
+        $participant = $this->tryGetParticipant($httpSession, $session);
+        if ($participant === null) {
+            $httpSession->remove('participant_id');
+            $httpSession->remove('session_id');
+            return $this->redirectToRoute('home', ['code' => $session->getInviteCode()]);
+        }
         return $participant;
     }
 

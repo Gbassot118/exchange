@@ -10,9 +10,6 @@
                 {{ annotation.author.pseudo|first|upper }}
             </span>
             <span class="font-medium text-sm text-gray-900">{{ annotation.author.pseudo }}</span>
-            {% if annotation.author.isAgent %}
-                <span class="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">IA</span>
-            {% endif %}
         </div>
         <span class="px-2 py-0.5 text-xs rounded-full
             {% if annotation.type == 'question' %}bg-amber-100 text-amber-700
@@ -85,9 +82,6 @@
                             {{ reply.author.pseudo|first|upper }}
                         </span>
                         <span class="font-medium text-gray-700">{{ reply.author.pseudo }}</span>
-                        {% if reply.author.isAgent %}
-                            <span class="px-1 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">IA</span>
-                        {% endif %}
                         <span class="text-gray-400">{{ reply.createdAt|date('H:i') }}</span>
                     </div>
                     <div class="text-gray-600 annotation-content">{{ reply.content|markdown_to_html }}</div>
