@@ -3,7 +3,14 @@ framework:
     secret: '%env(APP_SECRET)%'
 
     # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    session:
+        # Session cookie configuration for security
+        cookie_secure: auto          # Use secure cookies when on HTTPS
+        cookie_httponly: true        # Prevent JavaScript access to session cookie
+        cookie_samesite: lax         # Protect against CSRF (lax allows same-site navigation)
+        gc_maxlifetime: 3600         # Session expires after 1 hour of inactivity
+        cookie_lifetime: 0           # Cookie expires when browser closes (session cookie)
+        name: EXCHANGE_SESSID        # Custom session name (obscures framework)
 
     #esi: true
     #fragments: true
