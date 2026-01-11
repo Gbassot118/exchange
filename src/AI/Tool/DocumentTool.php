@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\AI\Tool;
 
 use App\Application\Command\Document\CreateDocumentCommand;
+use App\Application\Command\Document\DeleteDocumentCommand;
 use App\Application\Command\Document\UpdateDocumentCommand;
 use App\Application\DTO\Response\DocumentResponse;
 use App\Application\Query\Document\GetDocumentQuery;
@@ -16,12 +17,12 @@ use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 #[AsTool(
     name: 'document_operations',
-    description: 'Tool for managing documents in a collaborative documentation session. Supports listing, reading, creating, updating documents.',
+    description: 'Tool for managing documents in a collaborative documentation session. Supports listing, reading, creating, updating, and deleting documents.',
     parameters: [
         'operation' => [
             'type' => 'string',
-            'description' => 'The operation to perform: list, read, create, update',
-            'enum' => ['list', 'read', 'create', 'update'],
+            'description' => 'The operation to perform: list, read, create, update, delete',
+            'enum' => ['list', 'read', 'create', 'update', 'delete'],
             'required' => true,
         ],
         'session_id' => [
@@ -76,6 +77,7 @@ class DocumentTool
             'read' => $this->readDocument($document_id),
             'create' => $this->createDocument($session_id, $participant_id, $title, $content, $type, $parent_id),
             'update' => $this->updateDocument($document_id, $participant_id, $title, $content, $type),
+            'delete' => $this->deleteDocument($document_id),
             default => ['error' => 'Unknown operation: ' . $operation],
         };
     }
@@ -244,6 +246,36 @@ class DocumentTool
                     'slug' => $document->slug,
                     'current_version' => $document->currentVersion,
                 ],
+            ];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function deleteDocument(?string $documentId): array
+    {
+        if (empty($documentId)) {
+            return ['error' => 'document_id is required for delete operation'];
+        }
+
+        try {
+            $command = new DeleteDocumentCommand(
+                documentId: $documentId,
+            );
+
+            $envelope = $this->messageBus->dispatch($command);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Command was not handled'];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Document deleted successfully',
+                'deleted_document_id' => $documentId,
             ];
         } catch (ExceptionInterface $e) {
             return ['error' => $e->getMessage()];

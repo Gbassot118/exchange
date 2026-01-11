@@ -93,6 +93,60 @@ Content-Type: application/json
 | `POST` | `/annotations/{annotationId}/respond` | Répondre à une annotation |
 | `POST` | `/annotations/{annotationId}/acknowledge` | Marquer une annotation comme prise en compte |
 
+### Estimations (Planning Poker)
+
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `GET` | `/sessions/{sessionId}/estimations` | Lister les estimations de la session |
+| `POST` | `/sessions/{sessionId}/estimations` | **Créer une estimation** |
+| `GET` | `/estimations/{estimationId}` | Obtenir une estimation |
+| `POST` | `/estimations/{estimationId}/vote` | Voter sur une estimation |
+| `POST` | `/estimations/{estimationId}/reveal` | Révéler les votes |
+
+#### Créer une estimation
+
+```http
+POST /api/mcp/sessions/{sessionId}/estimations
+Content-Type: application/json
+X-Agent-Id: {participant_id}
+
+{
+    "title": "Story: Authentification OAuth",
+    "description": "Implémenter l'authentification OAuth2",
+    "document_id": "uuid-du-document"
+}
+```
+
+| Paramètre | Type | Requis | Description |
+|-----------|------|--------|-------------|
+| `title` | string | Oui | Titre de l'estimation |
+| `description` | string | Non | Description détaillée |
+| `document_id` | UUID | Non | Lier à un document existant |
+
+#### Voter sur une estimation
+
+```http
+POST /api/mcp/estimations/{estimationId}/vote
+Content-Type: application/json
+X-Agent-Id: {participant_id}
+
+{
+    "value": "5"
+}
+```
+
+**Valeurs Fibonacci valides:** `0`, `1`, `2`, `3`, `5`, `8`, `13`, `21`, `?`
+
+> Note: `?` indique une incertitude sur l'estimation.
+
+#### Révéler les votes
+
+```http
+POST /api/mcp/estimations/{estimationId}/reveal
+```
+
+Une fois révélés, les votes ne peuvent plus être modifiés. La moyenne est calculée automatiquement (exclut les `?`).
+
 ## Workflow recommandé pour l'agent
 
 1. **Rejoindre la session** via `/api/sessions/join/{inviteCode}` ou `/api/sessions/agent/create`
