@@ -11,23 +11,23 @@ use App\Repository\ParticipantRepository;
 use App\Service\Annotation\AnnotationService;
 use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 
 class AnnotationServiceTest extends TestCase
 {
-    private EntityManagerInterface&MockObject $entityManager;
-    private AnnotationRepository&MockObject $annotationRepository;
-    private ParticipantRepository&MockObject $participantRepository;
-    private MercurePublisher&MockObject $mercurePublisher;
+    private EntityManagerInterface&Stub $entityManager;
+    private AnnotationRepository&Stub $annotationRepository;
+    private ParticipantRepository&Stub $participantRepository;
+    private MercurePublisher&Stub $mercurePublisher;
     private AnnotationService $service;
 
     protected function setUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->annotationRepository = $this->createMock(AnnotationRepository::class);
-        $this->participantRepository = $this->createMock(ParticipantRepository::class);
-        $this->mercurePublisher = $this->createMock(MercurePublisher::class);
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->annotationRepository = $this->createStub(AnnotationRepository::class);
+        $this->participantRepository = $this->createStub(ParticipantRepository::class);
+        $this->mercurePublisher = $this->createStub(MercurePublisher::class);
 
         $this->service = new AnnotationService(
             $this->entityManager,
@@ -63,9 +63,6 @@ class AnnotationServiceTest extends TestCase
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, 'Test content');
 
         $this->assertInstanceOf(Annotation::class, $annotation);
@@ -75,9 +72,6 @@ class AnnotationServiceTest extends TestCase
     {
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $annotation = $this->service->create($document, $author, 'Test content');
 
@@ -89,9 +83,6 @@ class AnnotationServiceTest extends TestCase
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, 'Test content');
 
         $this->assertSame($author, $annotation->getAuthor());
@@ -101,9 +92,6 @@ class AnnotationServiceTest extends TestCase
     {
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $annotation = $this->service->create($document, $author, 'My annotation content');
 
@@ -115,9 +103,6 @@ class AnnotationServiceTest extends TestCase
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, 'Test', Annotation::TYPE_COMMENT);
 
         $this->assertSame(Annotation::TYPE_COMMENT, $annotation->getType());
@@ -128,9 +113,6 @@ class AnnotationServiceTest extends TestCase
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
         $anchor = ['start' => 10, 'end' => 50];
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $annotation = $this->service->create($document, $author, 'Test', Annotation::TYPE_COMMENT, $anchor);
 
@@ -152,9 +134,6 @@ class AnnotationServiceTest extends TestCase
             ->with($session, 'JohnDoe')
             ->willReturn($mentionedUser);
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, 'Hello @JohnDoe!');
 
         $this->assertContains($mentionedUser->getId()->toString(), $annotation->getMentions());
@@ -165,17 +144,23 @@ class AnnotationServiceTest extends TestCase
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
 
-        $this->annotationRepository->method('save');
-
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishAnnotationCreated')
             ->with(
                 $document->getSession()->getId()->toString(),
                 $document->getId()->toString(),
-                $this->isType('array')
+                $this->isArray()
             );
 
-        $this->service->create($document, $author, 'Test');
+        $service = new AnnotationService(
+            $this->entityManager,
+            $this->annotationRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $service->create($document, $author, 'Test');
     }
 
     public function testCreateReplyReturnsAnnotation(): void
@@ -187,9 +172,6 @@ class AnnotationServiceTest extends TestCase
         $parent->setDocument($document);
         $parent->setAuthor($author);
         $parent->setContent('Parent content');
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $reply = $this->service->createReply($parent, 'Reply content', $author);
 
@@ -206,9 +188,6 @@ class AnnotationServiceTest extends TestCase
         $parent->setAuthor($author);
         $parent->setContent('Parent content');
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $reply = $this->service->createReply($parent, 'Reply content', $author);
 
         $this->assertSame($parent, $reply->getParentAnnotation());
@@ -223,9 +202,6 @@ class AnnotationServiceTest extends TestCase
         $parent->setDocument($document);
         $parent->setAuthor($author);
         $parent->setContent('Parent content');
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $reply = $this->service->createReply($parent, 'Reply content', $author);
 
@@ -242,9 +218,6 @@ class AnnotationServiceTest extends TestCase
         $parent->setAuthor($author);
         $parent->setContent('Parent content');
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $reply = $this->service->createReply($parent, 'Reply', $author);
 
         $this->assertSame(Annotation::TYPE_COMMENT, $reply->getType());
@@ -259,9 +232,6 @@ class AnnotationServiceTest extends TestCase
         $annotation->setDocument($document);
         $annotation->setAuthor($author);
         $annotation->setContent('Old content');
-
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationUpdated');
 
         $result = $this->service->update($annotation, 'New content');
 
@@ -288,9 +258,6 @@ class AnnotationServiceTest extends TestCase
             ->with($session, 'NewUser')
             ->willReturn($newUser);
 
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationUpdated');
-
         $result = $this->service->update($annotation, 'Mentioning @NewUser now');
 
         $this->assertContains($newUser->getId()->toString(), $result->getMentions());
@@ -306,12 +273,18 @@ class AnnotationServiceTest extends TestCase
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
 
-        $this->entityManager->method('flush');
-
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishAnnotationUpdated');
 
-        $this->service->update($annotation, 'New content');
+        $service = new AnnotationService(
+            $this->entityManager,
+            $this->annotationRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $service->update($annotation, 'New content');
     }
 
     public function testResolveChangesStatus(): void
@@ -324,9 +297,6 @@ class AnnotationServiceTest extends TestCase
         $annotation->setDocument($document);
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
-
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationResolved');
 
         $result = $this->service->resolve($annotation, $resolver);
 
@@ -344,9 +314,6 @@ class AnnotationServiceTest extends TestCase
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
 
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationResolved');
-
         $result = $this->service->resolve($annotation, $resolver);
 
         $this->assertSame($resolver, $result->getResolvedBy());
@@ -363,12 +330,18 @@ class AnnotationServiceTest extends TestCase
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
 
-        $this->entityManager->method('flush');
-
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishAnnotationResolved');
 
-        $this->service->resolve($annotation, $resolver);
+        $service = new AnnotationService(
+            $this->entityManager,
+            $this->annotationRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $service->resolve($annotation, $resolver);
     }
 
     public function testMarkAsTakenIntoAccountSetsFlag(): void
@@ -380,9 +353,6 @@ class AnnotationServiceTest extends TestCase
         $annotation->setDocument($document);
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
-
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationUpdated');
 
         $result = $this->service->markAsTakenIntoAccount($annotation);
 
@@ -399,12 +369,18 @@ class AnnotationServiceTest extends TestCase
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
 
-        $this->entityManager->method('flush');
-
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishAnnotationUpdated');
 
-        $this->service->markAsTakenIntoAccount($annotation);
+        $service = new AnnotationService(
+            $this->entityManager,
+            $this->annotationRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $service->markAsTakenIntoAccount($annotation);
     }
 
     public function testSetStatusChangesStatus(): void
@@ -416,9 +392,6 @@ class AnnotationServiceTest extends TestCase
         $annotation->setDocument($document);
         $annotation->setAuthor($author);
         $annotation->setContent('Content');
-
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishAnnotationUpdated');
 
         $result = $this->service->setStatus($annotation, Annotation::STATUS_IN_PROGRESS);
 
@@ -518,9 +491,6 @@ class AnnotationServiceTest extends TestCase
                 return null;
             });
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, 'Hello @User1 and @User2!');
 
         $this->assertCount(2, $annotation->getMentions());
@@ -532,8 +502,6 @@ class AnnotationServiceTest extends TestCase
         $author = $this->createTestParticipant($document->getSession());
 
         $this->participantRepository->method('findBySessionAndPseudo')->willReturn(null);
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $annotation = $this->service->create($document, $author, 'Hello @NonExistent!');
 
@@ -554,9 +522,6 @@ class AnnotationServiceTest extends TestCase
             ->with($session, 'User')
             ->willReturn($user);
 
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
-
         $annotation = $this->service->create($document, $author, '@User @User @User');
 
         // Should have only 1 unique mention
@@ -567,9 +532,6 @@ class AnnotationServiceTest extends TestCase
     {
         $document = $this->createTestDocument();
         $author = $this->createTestParticipant($document->getSession());
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $annotation = $this->service->create($document, $author, 'No mentions here');
 
@@ -615,9 +577,6 @@ class AnnotationServiceTest extends TestCase
         $root->setDocument($document);
         $root->setAuthor($author);
         $root->setContent('Root');
-
-        $this->annotationRepository->method('save');
-        $this->mercurePublisher->method('publishAnnotationCreated');
 
         $reply1 = $this->service->createReply($root, 'Reply to root', $author);
         $this->assertTrue($reply1->isReply());

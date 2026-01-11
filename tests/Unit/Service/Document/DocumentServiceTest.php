@@ -10,6 +10,7 @@ use App\Service\Document\DocumentService;
 use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\String\Slugger\AsciiSlugger;
 use Symfony\Component\String\Slugger\SluggerInterface;
@@ -17,18 +18,18 @@ use Symfony\Component\Uid\Uuid;
 
 class DocumentServiceTest extends TestCase
 {
-    private EntityManagerInterface&MockObject $entityManager;
-    private DocumentRepository&MockObject $documentRepository;
+    private EntityManagerInterface&Stub $entityManager;
+    private DocumentRepository&Stub $documentRepository;
     private SluggerInterface $slugger;
-    private MercurePublisher&MockObject $mercurePublisher;
+    private MercurePublisher&Stub $mercurePublisher;
     private DocumentService $service;
 
     protected function setUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->documentRepository = $this->createMock(DocumentRepository::class);
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->documentRepository = $this->createStub(DocumentRepository::class);
         $this->slugger = new AsciiSlugger();
-        $this->mercurePublisher = $this->createMock(MercurePublisher::class);
+        $this->mercurePublisher = $this->createStub(MercurePublisher::class);
 
         $this->service = new DocumentService(
             $this->entityManager,
@@ -243,11 +244,19 @@ class DocumentServiceTest extends TestCase
         $this->entityManager->method('persist');
         $this->entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDocumentCreated')
-            ->with($session->getId()->toString(), $this->isType('array'));
+            ->with($session->getId()->toString(), $this->isArray());
 
-        $this->service->create($session, ['title' => 'Test']);
+        $service = new DocumentService(
+            $this->entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $mercurePublisher
+        );
+
+        $service->create($session, ['title' => 'Test']);
     }
 
     public function testUpdateModifiesTitle(): void
@@ -352,15 +361,23 @@ class DocumentServiceTest extends TestCase
 
         $this->entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDocumentUpdated')
             ->with(
                 $session->getId()->toString(),
                 $document->getId()->toString(),
-                $this->isType('array')
+                $this->isArray()
             );
 
-        $this->service->update($document, ['title' => 'New']);
+        $service = new DocumentService(
+            $this->entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $mercurePublisher
+        );
+
+        $service->update($document, ['title' => 'New']);
     }
 
     public function testUpdateWithAuthor(): void
@@ -394,13 +411,22 @@ class DocumentServiceTest extends TestCase
         $document->setTitle('Doc');
         $document->setSlug('doc');
 
-        $this->entityManager->expects($this->once())
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())
             ->method('remove')
             ->with($document);
-        $this->entityManager->method('flush');
+        $entityManager->method('flush');
+
         $this->mercurePublisher->method('publishDocumentDeleted');
 
-        $this->service->delete($document);
+        $service = new DocumentService(
+            $entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $this->mercurePublisher
+        );
+
+        $service->delete($document);
     }
 
     public function testDeleteRemovesChildren(): void
@@ -418,11 +444,20 @@ class DocumentServiceTest extends TestCase
         $child->setSlug('child');
         $parent->addChild($child);
 
-        $this->entityManager->expects($this->exactly(2))->method('remove');
-        $this->entityManager->method('flush');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->exactly(2))->method('remove');
+        $entityManager->method('flush');
+
         $this->mercurePublisher->method('publishDocumentDeleted');
 
-        $this->service->delete($parent);
+        $service = new DocumentService(
+            $entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $this->mercurePublisher
+        );
+
+        $service->delete($parent);
     }
 
     public function testDeletePublishesMercureEvent(): void
@@ -436,11 +471,19 @@ class DocumentServiceTest extends TestCase
         $this->entityManager->method('remove');
         $this->entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDocumentDeleted')
             ->with($session->getId()->toString(), $document->getId()->toString());
 
-        $this->service->delete($document);
+        $service = new DocumentService(
+            $this->entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $mercurePublisher
+        );
+
+        $service->delete($document);
     }
 
     public function testReorderSamePositionNoChange(): void
@@ -564,12 +607,20 @@ class DocumentServiceTest extends TestCase
         $child3->setSlug('child-3');
         $child2->addChild($child3);
 
-        // Should remove all 4 documents
-        $this->entityManager->expects($this->exactly(4))->method('remove');
-        $this->entityManager->method('flush');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->exactly(4))->method('remove');
+        $entityManager->method('flush');
+
         $this->mercurePublisher->method('publishDocumentDeleted');
 
-        $this->service->delete($root);
+        $service = new DocumentService(
+            $entityManager,
+            $this->documentRepository,
+            $this->slugger,
+            $this->mercurePublisher
+        );
+
+        $service->delete($root);
     }
 
     public function testUpdateAgentDefaultDescription(): void

@@ -9,23 +9,23 @@ use App\Repository\SessionRepository;
 use App\Service\Mercure\MercurePublisher;
 use App\Service\Session\SessionService;
 use Doctrine\ORM\EntityManagerInterface;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 
 class SessionServiceTest extends TestCase
 {
-    private EntityManagerInterface&MockObject $entityManager;
-    private SessionRepository&MockObject $sessionRepository;
-    private ParticipantRepository&MockObject $participantRepository;
-    private MercurePublisher&MockObject $mercurePublisher;
+    private EntityManagerInterface&Stub $entityManager;
+    private SessionRepository&Stub $sessionRepository;
+    private ParticipantRepository&Stub $participantRepository;
+    private MercurePublisher&Stub $mercurePublisher;
     private SessionService $service;
 
     protected function setUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->sessionRepository = $this->createMock(SessionRepository::class);
-        $this->participantRepository = $this->createMock(ParticipantRepository::class);
-        $this->mercurePublisher = $this->createMock(MercurePublisher::class);
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->sessionRepository = $this->createStub(SessionRepository::class);
+        $this->participantRepository = $this->createStub(ParticipantRepository::class);
+        $this->mercurePublisher = $this->createStub(MercurePublisher::class);
 
         $this->service = new SessionService(
             $this->entityManager,
@@ -37,11 +37,19 @@ class SessionServiceTest extends TestCase
 
     public function testCreateReturnsSession(): void
     {
-        $this->sessionRepository->expects($this->once())
+        $sessionRepository = $this->createMock(SessionRepository::class);
+        $sessionRepository->expects($this->once())
             ->method('save')
             ->with($this->isInstanceOf(Session::class), true);
 
-        $session = $this->service->create('Test Session');
+        $service = new SessionService(
+            $this->entityManager,
+            $sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $session = $service->create('Test Session');
 
         $this->assertInstanceOf(Session::class, $session);
     }
@@ -75,14 +83,22 @@ class SessionServiceTest extends TestCase
 
     public function testCreateCallsRepositorySave(): void
     {
-        $this->sessionRepository->expects($this->once())
+        $sessionRepository = $this->createMock(SessionRepository::class);
+        $sessionRepository->expects($this->once())
             ->method('save')
             ->with(
                 $this->isInstanceOf(Session::class),
                 $this->isTrue()
             );
 
-        $this->service->create('Test');
+        $service = new SessionService(
+            $this->entityManager,
+            $sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $service->create('Test');
     }
 
     public function testUpdateStatusChangesStatus(): void
@@ -90,10 +106,20 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->entityManager->expects($this->once())->method('flush');
-        $this->mercurePublisher->expects($this->once())->method('publishSessionStatusChanged');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
 
-        $result = $this->service->updateStatus($session, Session::STATUS_EN_COURS);
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())->method('publishSessionStatusChanged');
+
+        $service = new SessionService(
+            $entityManager,
+            $this->sessionRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $result = $service->updateStatus($session, Session::STATUS_EN_COURS);
 
         $this->assertSame(Session::STATUS_EN_COURS, $result->getStatus());
     }
@@ -103,10 +129,17 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->entityManager->expects($this->once())->method('flush');
-        $this->mercurePublisher->method('publishSessionStatusChanged');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
 
-        $this->service->updateStatus($session, Session::STATUS_TERMINE);
+        $service = new SessionService(
+            $entityManager,
+            $this->sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $service->updateStatus($session, Session::STATUS_TERMINE);
     }
 
     public function testUpdateStatusPublishesMercureEvent(): void
@@ -114,15 +147,22 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishSessionStatusChanged')
             ->with(
                 $session->getId()->toString(),
                 Session::STATUS_EN_COURS
             );
 
-        $this->service->updateStatus($session, Session::STATUS_EN_COURS);
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $this->participantRepository,
+            $mercurePublisher
+        );
+
+        $service->updateStatus($session, Session::STATUS_EN_COURS);
     }
 
     public function testUpdateStatusReturnsSession(): void
@@ -143,24 +183,40 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->sessionRepository->expects($this->once())
+        $sessionRepository = $this->createMock(SessionRepository::class);
+        $sessionRepository->expects($this->once())
             ->method('findByInviteCode')
             ->with('abc123')
             ->willReturn($session);
 
-        $result = $this->service->findByInviteCode('abc123');
+        $service = new SessionService(
+            $this->entityManager,
+            $sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $result = $service->findByInviteCode('abc123');
 
         $this->assertSame($session, $result);
     }
 
     public function testFindByInviteCodeReturnsNullWhenNotFound(): void
     {
-        $this->sessionRepository->expects($this->once())
+        $sessionRepository = $this->createMock(SessionRepository::class);
+        $sessionRepository->expects($this->once())
             ->method('findByInviteCode')
             ->with('invalid')
             ->willReturn(null);
 
-        $result = $this->service->findByInviteCode('invalid');
+        $service = new SessionService(
+            $this->entityManager,
+            $sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $result = $service->findByInviteCode('invalid');
 
         $this->assertNull($result);
     }
@@ -170,14 +226,21 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->participantRepository->method('findBySessionAndPseudo')->willReturn(null);
-        $this->participantRepository->expects($this->once())
+        $participantRepository = $this->createMock(ParticipantRepository::class);
+        $participantRepository->method('findBySessionAndPseudo')->willReturn(null);
+        $participantRepository->expects($this->once())
             ->method('save')
             ->with($this->isInstanceOf(Participant::class), true);
-        $this->participantRepository->method('findOnlineInSession')->willReturn([]);
-        $this->mercurePublisher->method('publishPresenceUpdate');
+        $participantRepository->method('findOnlineInSession')->willReturn([]);
 
-        $participant = $this->service->joinSession($session, 'NewUser');
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $this->mercurePublisher
+        );
+
+        $participant = $service->joinSession($session, 'NewUser');
 
         $this->assertInstanceOf(Participant::class, $participant);
         $this->assertSame('NewUser', $participant->getPseudo());
@@ -242,10 +305,20 @@ class SessionServiceTest extends TestCase
         $existingParticipant->setPseudo('ExistingUser');
         $existingParticipant->setLastSeenAt(new \DateTimeImmutable('-1 hour'));
 
-        $this->participantRepository->method('findBySessionAndPseudo')->willReturn($existingParticipant);
-        $this->entityManager->expects($this->once())->method('flush');
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findBySessionAndPseudo')->willReturn($existingParticipant);
 
-        $participant = $this->service->joinSession($session, 'ExistingUser');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $service = new SessionService(
+            $entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $this->mercurePublisher
+        );
+
+        $participant = $service->joinSession($session, 'ExistingUser');
 
         $this->assertEqualsWithDelta(new \DateTimeImmutable(), $participant->getLastSeenAt(), 1);
     }
@@ -255,14 +328,23 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->participantRepository->method('findBySessionAndPseudo')->willReturn(null);
-        $this->participantRepository->method('save');
-        $this->participantRepository->method('findOnlineInSession')->willReturn([]);
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findBySessionAndPseudo')->willReturn(null);
+        $participantRepository->method('save');
+        $participantRepository->method('findOnlineInSession')->willReturn([]);
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishPresenceUpdate');
 
-        $this->service->joinSession($session, 'NewUser');
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $mercurePublisher
+        );
+
+        $service->joinSession($session, 'NewUser');
     }
 
     public function testJoinSessionDoesNotBroadcastForExisting(): void
@@ -274,14 +356,21 @@ class SessionServiceTest extends TestCase
         $existingParticipant->setSession($session);
         $existingParticipant->setPseudo('ExistingUser');
 
-        $this->participantRepository->method('findBySessionAndPseudo')->willReturn($existingParticipant);
-        $this->entityManager->method('flush');
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findBySessionAndPseudo')->willReturn($existingParticipant);
 
-        // Should NOT broadcast for existing participant
-        $this->mercurePublisher->expects($this->never())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->never())
             ->method('publishPresenceUpdate');
 
-        $this->service->joinSession($session, 'ExistingUser');
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $mercurePublisher
+        );
+
+        $service->joinSession($session, 'ExistingUser');
     }
 
     public function testUpdateParticipantPresenceSetsLastSeenAt(): void
@@ -349,11 +438,20 @@ class SessionServiceTest extends TestCase
         $participant->setSession($session);
         $participant->setPseudo('User');
 
-        $this->entityManager->method('flush');
-        $this->participantRepository->method('findOnlineInSession')->willReturn([]);
-        $this->mercurePublisher->expects($this->once())->method('publishPresenceUpdate');
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findOnlineInSession')->willReturn([]);
 
-        $this->service->updateParticipantPresence($participant);
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())->method('publishPresenceUpdate');
+
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $mercurePublisher
+        );
+
+        $service->updateParticipantPresence($participant);
     }
 
     public function testGetOnlineParticipantsReturnsArray(): void
@@ -363,11 +461,19 @@ class SessionServiceTest extends TestCase
 
         $participants = [new Participant(), new Participant()];
 
-        $this->participantRepository->expects($this->once())
+        $participantRepository = $this->createMock(ParticipantRepository::class);
+        $participantRepository->expects($this->once())
             ->method('findOnlineInSession')
             ->willReturn($participants);
 
-        $result = $this->service->getOnlineParticipants($session);
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $this->mercurePublisher
+        );
+
+        $result = $service->getOnlineParticipants($session);
 
         $this->assertIsArray($result);
         $this->assertCount(2, $result);
@@ -378,12 +484,22 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->participantRepository->method('findOnlineInSession')->willReturn([]);
-        $this->mercurePublisher->expects($this->once())
-            ->method('publishPresenceUpdate')
-            ->with($session->getId()->toString(), $this->isType('array'));
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findOnlineInSession')->willReturn([]);
 
-        $this->service->broadcastPresence($session);
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
+            ->method('publishPresenceUpdate')
+            ->with($session->getId()->toString(), $this->isArray());
+
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $mercurePublisher
+        );
+
+        $service->broadcastPresence($session);
     }
 
     public function testBroadcastPresenceIncludesAllParticipantData(): void
@@ -395,9 +511,11 @@ class SessionServiceTest extends TestCase
         $participant->setSession($session);
         $participant->setPseudo('TestUser');
 
-        $this->participantRepository->method('findOnlineInSession')->willReturn([$participant]);
+        $participantRepository = $this->createStub(ParticipantRepository::class);
+        $participantRepository->method('findOnlineInSession')->willReturn([$participant]);
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishPresenceUpdate')
             ->with(
                 $session->getId()->toString(),
@@ -411,7 +529,14 @@ class SessionServiceTest extends TestCase
                 })
             );
 
-        $this->service->broadcastPresence($session);
+        $service = new SessionService(
+            $this->entityManager,
+            $this->sessionRepository,
+            $participantRepository,
+            $mercurePublisher
+        );
+
+        $service->broadcastPresence($session);
     }
 
     public function testArchiveSetsStatusToArchive(): void
@@ -446,9 +571,17 @@ class SessionServiceTest extends TestCase
         $session->setTitle('Test');
         $originalCode = $session->getInviteCode();
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
 
-        $result = $this->service->regenerateInviteCode($session);
+        $service = new SessionService(
+            $entityManager,
+            $this->sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $result = $service->regenerateInviteCode($session);
 
         $this->assertNotSame($originalCode, $result->getInviteCode());
     }
@@ -458,9 +591,17 @@ class SessionServiceTest extends TestCase
         $session = new Session();
         $session->setTitle('Test');
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
 
-        $this->service->regenerateInviteCode($session);
+        $service = new SessionService(
+            $entityManager,
+            $this->sessionRepository,
+            $this->participantRepository,
+            $this->mercurePublisher
+        );
+
+        $service->regenerateInviteCode($session);
     }
 
     public function testRegenerateInviteCodeReturnsSession(): void

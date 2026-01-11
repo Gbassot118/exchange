@@ -12,22 +12,22 @@ use App\Repository\AnnotationRepository;
 use App\Repository\DecisionRepository;
 use App\Repository\DocumentRepository;
 use App\Service\Export\ExportService;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
 class ExportServiceTest extends TestCase
 {
-    private DocumentRepository&MockObject $documentRepository;
-    private AnnotationRepository&MockObject $annotationRepository;
-    private DecisionRepository&MockObject $decisionRepository;
+    private DocumentRepository&Stub $documentRepository;
+    private AnnotationRepository&Stub $annotationRepository;
+    private DecisionRepository&Stub $decisionRepository;
     private ExportService $service;
 
     protected function setUp(): void
     {
-        $this->documentRepository = $this->createMock(DocumentRepository::class);
-        $this->annotationRepository = $this->createMock(AnnotationRepository::class);
-        $this->decisionRepository = $this->createMock(DecisionRepository::class);
+        $this->documentRepository = $this->createStub(DocumentRepository::class);
+        $this->annotationRepository = $this->createStub(AnnotationRepository::class);
+        $this->decisionRepository = $this->createStub(DecisionRepository::class);
 
         $this->service = new ExportService(
             $this->documentRepository,

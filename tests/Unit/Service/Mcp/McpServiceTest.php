@@ -17,10 +17,12 @@ use App\Service\Decision\DecisionService;
 use App\Service\Document\DocumentService;
 use App\Service\Mcp\McpService;
 use App\Service\Session\SessionService;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
+#[AllowMockObjectsWithoutExpectations]
 class McpServiceTest extends TestCase
 {
     private SessionRepository&MockObject $sessionRepository;
@@ -231,7 +233,7 @@ class McpServiceTest extends TestCase
         $this->participantRepository->method('find')->willReturn($participant);
         $this->documentService->expects($this->once())
             ->method('create')
-            ->with($session, $this->isType('array'), $participant)
+            ->with($session, $this->isArray(), $participant)
             ->willReturn($document);
         $this->documentService->method('serialize')->willReturn(['id' => 'doc-id']);
 
@@ -250,7 +252,7 @@ class McpServiceTest extends TestCase
         $this->sessionRepository->method('find')->willReturn($session);
         $this->documentService->expects($this->once())
             ->method('create')
-            ->with($session, $this->isType('array'), null)
+            ->with($session, $this->isArray(), null)
             ->willReturn($document);
         $this->documentService->method('serialize')->willReturn(['id' => 'doc-id']);
 
@@ -326,7 +328,7 @@ class McpServiceTest extends TestCase
         $this->participantRepository->method('find')->willReturn($participant);
         $this->documentService->expects($this->once())
             ->method('update')
-            ->with($document, $this->isType('array'), $participant, null)
+            ->with($document, $this->isArray(), $participant, null)
             ->willReturn($document);
         $this->documentService->method('serialize')->willReturn(['id' => 'doc-id']);
 

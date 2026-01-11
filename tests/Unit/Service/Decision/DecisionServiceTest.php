@@ -13,23 +13,24 @@ use App\Service\Decision\DecisionService;
 use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
 class DecisionServiceTest extends TestCase
 {
-    private EntityManagerInterface&MockObject $entityManager;
-    private DecisionRepository&MockObject $decisionRepository;
-    private VoteRepository&MockObject $voteRepository;
-    private MercurePublisher&MockObject $mercurePublisher;
+    private EntityManagerInterface&Stub $entityManager;
+    private DecisionRepository&Stub $decisionRepository;
+    private VoteRepository&Stub $voteRepository;
+    private MercurePublisher&Stub $mercurePublisher;
     private DecisionService $service;
 
     protected function setUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->decisionRepository = $this->createMock(DecisionRepository::class);
-        $this->voteRepository = $this->createMock(VoteRepository::class);
-        $this->mercurePublisher = $this->createMock(MercurePublisher::class);
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->decisionRepository = $this->createStub(DecisionRepository::class);
+        $this->voteRepository = $this->createStub(VoteRepository::class);
+        $this->mercurePublisher = $this->createStub(MercurePublisher::class);
 
         $this->service = new DecisionService(
             $this->entityManager,
@@ -160,13 +161,22 @@ class DecisionServiceTest extends TestCase
     {
         $session = $this->createSession();
 
-        $this->decisionRepository->method('save');
+        $decisionRepository = $this->createStub(DecisionRepository::class);
+        $decisionRepository->method('save');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDecisionCreated')
             ->with($this->isInstanceOf(Decision::class));
 
-        $this->service->create($session, 'Title', [['label' => 'A']]);
+        $service = new DecisionService(
+            $this->entityManager,
+            $decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->create($session, 'Title', [['label' => 'A']]);
     }
 
     public function testVoteCreatesNewVote(): void
@@ -314,18 +324,27 @@ class DecisionServiceTest extends TestCase
 
         $optionId = $decision->getOptions()[0]['id'];
 
-        $this->voteRepository->method('findByDecisionAndParticipant')->willReturn(null);
-        $this->voteRepository->method('save');
+        $voteRepository = $this->createStub(VoteRepository::class);
+        $voteRepository->method('findByDecisionAndParticipant')->willReturn(null);
+        $voteRepository->method('save');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishVoteReceived')
             ->with(
                 $session->getId()->toString(),
                 $decision->getId()->toString(),
-                $this->isType('array')
+                $this->isArray()
             );
 
-        $this->service->vote($decision, $participant, $optionId);
+        $service = new DecisionService(
+            $this->entityManager,
+            $this->decisionRepository,
+            $voteRepository,
+            $mercurePublisher
+        );
+
+        $service->vote($decision, $participant, $optionId);
     }
 
     public function testRemoveVoteDeletesVote(): void
@@ -337,12 +356,22 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->voteRepository->expects($this->once())
+        $voteRepository = $this->createMock(VoteRepository::class);
+        $voteRepository->expects($this->once())
             ->method('removeByDecisionAndParticipant')
             ->with($decision, $participant);
-        $this->mercurePublisher->method('publishVoteReceived');
 
-        $this->service->removeVote($decision, $participant);
+        $mercurePublisher = $this->createStub(MercurePublisher::class);
+        $mercurePublisher->method('publishVoteReceived');
+
+        $service = new DecisionService(
+            $this->entityManager,
+            $this->decisionRepository,
+            $voteRepository,
+            $mercurePublisher
+        );
+
+        $service->removeVote($decision, $participant);
     }
 
     public function testRemoveVoteThrowsWhenLocked(): void
@@ -369,12 +398,21 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->voteRepository->method('removeByDecisionAndParticipant');
+        $voteRepository = $this->createStub(VoteRepository::class);
+        $voteRepository->method('removeByDecisionAndParticipant');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishVoteReceived');
 
-        $this->service->removeVote($decision, $participant);
+        $service = new DecisionService(
+            $this->entityManager,
+            $this->decisionRepository,
+            $voteRepository,
+            $mercurePublisher
+        );
+
+        $service->removeVote($decision, $participant);
     }
 
     public function testUpdateStatusChangesStatus(): void
@@ -432,12 +470,21 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->entityManager->method('flush');
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDecisionStatusChanged');
 
-        $this->service->updateStatus($decision, Decision::STATUS_CONSENSUS);
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->updateStatus($decision, Decision::STATUS_CONSENSUS);
     }
 
     public function testValidateSetsSelectedOption(): void
@@ -508,12 +555,21 @@ class DecisionServiceTest extends TestCase
 
         $optionId = $decision->getOptions()[0]['id'];
 
-        $this->entityManager->method('flush');
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDecisionStatusChanged');
 
-        $this->service->validate($decision, $optionId);
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->validate($decision, $optionId);
     }
 
     public function testPostponeSetsStatusToReporte(): void
@@ -560,12 +616,21 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->entityManager->method('flush');
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDecisionStatusChanged');
 
-        $this->service->postpone($decision);
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->postpone($decision);
     }
 
     public function testDeleteRemovesVotes(): void
@@ -583,12 +648,22 @@ class DecisionServiceTest extends TestCase
         $vote->setOptionId(Uuid::v7());
         $decision->addVote($vote);
 
-        $this->entityManager->expects($this->exactly(2))
-            ->method('remove'); // 1 vote + 1 decision
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishDecisionDeleted');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->exactly(2))
+            ->method('remove');
+        $entityManager->method('flush');
 
-        $this->service->delete($decision);
+        $mercurePublisher = $this->createStub(MercurePublisher::class);
+        $mercurePublisher->method('publishDecisionDeleted');
+
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->delete($decision);
     }
 
     public function testDeleteRemovesDecision(): void
@@ -599,13 +674,23 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->entityManager->expects($this->once())
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())
             ->method('remove')
             ->with($decision);
-        $this->entityManager->method('flush');
-        $this->mercurePublisher->method('publishDecisionDeleted');
+        $entityManager->method('flush');
 
-        $this->service->delete($decision);
+        $mercurePublisher = $this->createStub(MercurePublisher::class);
+        $mercurePublisher->method('publishDecisionDeleted');
+
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->delete($decision);
     }
 
     public function testDeletePublishesMercureEvent(): void
@@ -616,10 +701,12 @@ class DecisionServiceTest extends TestCase
         $decision->setSession($session);
         $decision->setTitle('Test');
 
-        $this->entityManager->method('remove');
-        $this->entityManager->method('flush');
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('remove');
+        $entityManager->method('flush');
 
-        $this->mercurePublisher->expects($this->once())
+        $mercurePublisher = $this->createMock(MercurePublisher::class);
+        $mercurePublisher->expects($this->once())
             ->method('publishDecisionDeleted')
             ->with(
                 $session->getId()->toString(),
@@ -627,7 +714,14 @@ class DecisionServiceTest extends TestCase
                 $this->anything()
             );
 
-        $this->service->delete($decision);
+        $service = new DecisionService(
+            $entityManager,
+            $this->decisionRepository,
+            $this->voteRepository,
+            $mercurePublisher
+        );
+
+        $service->delete($decision);
     }
 
     public function testSerializeIncludesAllFields(): void

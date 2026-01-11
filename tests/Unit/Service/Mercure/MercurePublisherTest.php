@@ -6,6 +6,7 @@ use App\Entity\Decision;
 use App\Entity\Document;
 use App\Entity\Session;
 use App\Service\Mercure\MercurePublisher;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mercure\HubInterface;
@@ -361,6 +362,7 @@ class MercurePublisherTest extends TestCase
         $this->publisher->publishDocumentCreated('session-id', []);
     }
 
+    #[AllowMockObjectsWithoutExpectations]
     public function testAllPublishMethodsUseCorrectEventTypes(): void
     {
         $session = new Session();
