@@ -10,7 +10,7 @@ use App\Repository\ParticipantRepository;
 use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
 
-final class AnnotationService
+class AnnotationService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

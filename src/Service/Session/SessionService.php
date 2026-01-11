@@ -9,7 +9,7 @@ use App\Repository\SessionRepository;
 use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
 
-final class SessionService
+class SessionService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

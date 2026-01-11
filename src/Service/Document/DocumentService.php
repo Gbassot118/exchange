@@ -12,7 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\String\Slugger\SluggerInterface;
 use Symfony\Component\Uid\Uuid;
 
-final class DocumentService
+class DocumentService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

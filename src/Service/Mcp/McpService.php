@@ -17,7 +17,7 @@ use App\Service\Document\DocumentService;
 use App\Service\Session\SessionService;
 use Symfony\Component\Uid\Uuid;
 
-final class McpService
+class McpService
 {
     public function __construct(
         private readonly SessionRepository $sessionRepository,

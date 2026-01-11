@@ -6,7 +6,7 @@ use App\Entity\Decision;
 use Symfony\Component\Mercure\HubInterface;
 use Symfony\Component\Mercure\Update;
 
-final class MercurePublisher
+class MercurePublisher
 {
     public function __construct(
         private readonly HubInterface $hub,

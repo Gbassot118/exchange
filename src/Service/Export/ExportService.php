@@ -10,7 +10,7 @@ use App\Repository\AnnotationRepository;
 use App\Repository\DecisionRepository;
 use App\Repository\DocumentRepository;
 
-final class ExportService
+class ExportService
 {
     public function __construct(
         private readonly DocumentRepository $documentRepository,

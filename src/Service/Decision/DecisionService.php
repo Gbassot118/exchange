@@ -13,7 +13,7 @@ use App\Service\Mercure\MercurePublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
-final class DecisionService
+class DecisionService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
