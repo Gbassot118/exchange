@@ -36,7 +36,14 @@
       "Bash(php -l:*)",
       "mcp__playwright__browser_run_code",
       "mcp__playwright__browser_network_requests",
-      "mcp__playwright__browser_tabs"
+      "mcp__playwright__browser_tabs",
+      "Bash(chmod:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr create --title \"feat: add GitHub Actions CI with PHPUnit, migrations and code quality jobs\" --body \"$\\(cat <<''EOF''\n## Summary\n- Add complete GitHub Actions CI pipeline with 4 parallel jobs\n- Configure PHPUnit with unit test suite and PostgreSQL service\n- Add Doctrine migrations testing and schema validation\n- Install required Symfony AI platform packages\n\n## Changes\n- **PHPUnit Tests job**: Runs unit tests with PostgreSQL database\n- **Code Quality job**: Validates Symfony configuration\n- **Migrations job**: Tests Doctrine migrations and schema validation  \n- **Lint job**: Super-linter for code style\n\n## New files\n- `bin/phpunit` - PHPUnit runner script\n- `phpunit.xml.dist` - PHPUnit configuration\n- `tests/bootstrap.php` - Test bootstrap\n- `tests/Unit/KernelTest.php` - Basic kernel test\n\n## Test plan\n- [ ] Verify PHPUnit Tests job passes\n- [ ] Verify Code Quality job passes\n- [ ] Verify Migrations job passes\n- [ ] Verify Lint job passes\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\nEOF\n\\)\")",
+      "mcp__playwright__browser_install"
     ]
   }
 }
