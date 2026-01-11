@@ -14,6 +14,7 @@ use App\Repository\SessionRepository;
 use App\Service\Annotation\AnnotationService;
 use App\Service\Decision\DecisionService;
 use App\Service\Document\DocumentService;
+use App\Service\Session\SessionService;
 use Symfony\Component\Uid\Uuid;
 
 final class McpService
@@ -27,6 +28,7 @@ final class McpService
         private readonly DocumentService $documentService,
         private readonly AnnotationService $annotationService,
         private readonly DecisionService $decisionService,
+        private readonly SessionService $sessionService,
     ) {}
 
     public function listDocuments(string $sessionId, ?string $parentId = null, ?string $type = null): array
@@ -190,6 +192,47 @@ final class McpService
                 fn($a) => $this->annotationService->serialize($a),
                 $this->annotationRepository->findPriorityAnnotations($session, 5)
             ),
+        ];
+    }
+
+    /**
+     * Met à jour le statut d'une session.
+     *
+     * Statuts disponibles:
+     * - 'preparation': Session en préparation (état initial) - documents peuvent être ajoutés/modifiés
+     * - 'en_cours': Session active - travail collaboratif en cours
+     * - 'termine': Session terminée - travaux complétés
+     * - 'archive': Session archivée - n'apparaît plus dans les listes actives
+     *
+     * @param string $sessionId L'ID de la session
+     * @param string $status Le nouveau statut ('preparation', 'en_cours', 'termine', 'archive')
+     * @return array Les informations de la session mise à jour
+     * @throws \InvalidArgumentException Si la session n'existe pas ou si le statut est invalide
+     */
+    public function updateSessionStatus(string $sessionId, string $status): array
+    {
+        $session = $this->getSession($sessionId);
+
+        $validStatuses = [
+            Session::STATUS_PREPARATION,
+            Session::STATUS_EN_COURS,
+            Session::STATUS_TERMINE,
+            Session::STATUS_ARCHIVE,
+        ];
+
+        if (!in_array($status, $validStatuses, true)) {
+            throw new \InvalidArgumentException(
+                "Statut invalide: {$status}. Valeurs acceptées: " . implode(', ', $validStatuses)
+            );
+        }
+
+        $session = $this->sessionService->updateStatus($session, $status);
+
+        return [
+            'id' => $session->getId()->toString(),
+            'title' => $session->getTitle(),
+            'status' => $session->getStatus(),
+            'updated_at' => $session->getUpdatedAt()->format(\DateTimeInterface::ATOM),
         ];
     }
 
