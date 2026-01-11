@@ -28,20 +28,6 @@ final readonly class CreateDecisionRequest
             minMessage: 'Une décision doit avoir au moins {{ limit }} options',
             maxMessage: 'Une décision ne peut pas avoir plus de {{ limit }} options'
         )]
-        #[Assert\All([
-            new Assert\Collection([
-                'fields' => [
-                    'label' => [
-                        new Assert\NotBlank(message: 'Le label de l\'option est obligatoire'),
-                        new Assert\Length(max: 255),
-                    ],
-                    'description' => new Assert\Optional([
-                        new Assert\Length(max: 1000),
-                    ]),
-                ],
-                'allowExtraFields' => true,
-            ]),
-        ])]
         public array $options,
 
         #[Assert\Length(
