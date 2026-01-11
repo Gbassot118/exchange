@@ -50,6 +50,128 @@
     // Start heartbeat
     startHeartbeat(sessionId, participantId);
 
+    // Store last presence data for re-applying after sidebar refresh
+    let lastPresenceData = [];
+
+    // ====== COLLAPSE/EXPAND FUNCTIONALITY ======
+    const COLLAPSED_DOCS_KEY = `collapsed-docs-${sessionId}`;
+
+    function getCollapsedDocs() {
+        try {
+            const stored = localStorage.getItem(COLLAPSED_DOCS_KEY);
+            return stored ? new Set(JSON.parse(stored)) : new Set();
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    function saveCollapsedDocs(collapsedSet) {
+        localStorage.setItem(COLLAPSED_DOCS_KEY, JSON.stringify([...collapsedSet]));
+    }
+
+    function toggleDocumentCollapse(docId) {
+        const children = document.getElementById(`children-${docId}`);
+        const button = document.querySelector(`button[data-doc-id="${docId}"]`);
+        if (!children) return;
+
+        const collapsed = getCollapsedDocs();
+
+        if (collapsed.has(docId)) {
+            // Expand
+            collapsed.delete(docId);
+            children.classList.remove('hidden');
+            if (button) {
+                button.querySelector('.chevron-icon').style.transform = 'rotate(90deg)';
+            }
+        } else {
+            // Collapse
+            collapsed.add(docId);
+            children.classList.add('hidden');
+            if (button) {
+                button.querySelector('.chevron-icon').style.transform = 'rotate(0deg)';
+            }
+        }
+
+        saveCollapsedDocs(collapsed);
+    }
+
+    function restoreCollapsedState() {
+        const collapsed = getCollapsedDocs();
+        collapsed.forEach(docId => {
+            const children = document.getElementById(`children-${docId}`);
+            const button = document.querySelector(`button[data-doc-id="${docId}"]`);
+            if (children) {
+                children.classList.add('hidden');
+            }
+            if (button) {
+                button.querySelector('.chevron-icon').style.transform = 'rotate(0deg)';
+            }
+        });
+
+        // Set expanded state for non-collapsed documents
+        document.querySelectorAll('.children-container').forEach(ul => {
+            const docId = ul.id.replace('children-', '');
+            if (!collapsed.has(docId)) {
+                const button = document.querySelector(`button[data-doc-id="${docId}"]`);
+                if (button) {
+                    button.querySelector('.chevron-icon').style.transform = 'rotate(90deg)';
+                }
+            }
+        });
+    }
+
+    // Make toggleDocumentCollapse available globally (called from onclick in template)
+    window.toggleDocumentCollapse = toggleDocumentCollapse;
+
+    // Initialize collapsed state on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        restoreCollapsedState();
+    });
+
+    // ====== PRESENCE INDICATORS IN SIDEBAR ======
+    function updateDocumentPresenceIndicators(participants) {
+        // Clear all presence indicators
+        document.querySelectorAll('.presence-indicators').forEach(el => {
+            el.innerHTML = '';
+        });
+
+        // Group participants by document_id
+        const byDocument = {};
+        participants.forEach(p => {
+            if (p.current_document_id) {
+                if (!byDocument[p.current_document_id]) {
+                    byDocument[p.current_document_id] = [];
+                }
+                byDocument[p.current_document_id].push(p);
+            }
+        });
+
+        // Display indicators for each document
+        for (const [docId, viewers] of Object.entries(byDocument)) {
+            const container = document.getElementById(`presence-doc-${docId}`);
+            if (container) {
+                // Show max 4 indicators, then +N
+                const maxVisible = 4;
+                const visibleViewers = viewers.slice(0, maxVisible);
+                const remaining = viewers.length - maxVisible;
+
+                let html = '';
+                visibleViewers.forEach(p => {
+                    const initial = p.pseudo.charAt(0).toUpperCase();
+                    html += `<span class="w-5 h-5 rounded-full inline-flex items-center justify-center flex-shrink-0 text-white text-xs font-medium"
+                                  style="background-color: ${p.color}"
+                                  title="${p.pseudo}">${initial}</span>`;
+                });
+
+                if (remaining > 0) {
+                    html += `<span class="text-xs text-gray-500 ml-0.5" title="${viewers.slice(maxVisible).map(p => p.pseudo).join(', ')}">+${remaining}</span>`;
+                }
+
+                container.innerHTML = html;
+            }
+        }
+    }
+
     // Connect to Mercure SSE for real-time updates
     const topics = [
         `/sessions/${sessionId}`,
@@ -69,6 +191,13 @@
         htmx.ajax('GET', `/session/${sessionId}/sidebar`, {
             target: '#document-tree',
             swap: 'innerHTML'
+        }).then(() => {
+            // Restore collapsed state after refresh
+            restoreCollapsedState();
+            // Re-apply presence indicators
+            if (lastPresenceData.length > 0) {
+                updateDocumentPresenceIndicators(lastPresenceData);
+            }
         }).catch(e => console.error('Failed to refresh document tree:', e));
     }
 
@@ -111,6 +240,7 @@
 
     // Presence updates
     handleSSEEvent('presence.update', (data) => {
+        lastPresenceData = data.participants;
         updatePresence(data.participants);
     });
 
@@ -207,29 +337,33 @@
     };
 
     function updatePresence(participants) {
+        // Update header presence indicators (avatars)
         const container = document.getElementById('presence-indicator');
         const countEl = document.getElementById('presence-count');
-        if (!container) return;
-
-        let html = '';
-        participants.forEach(p => {
-            html += `
-                <div class="relative group" title="${p.pseudo}">
-                    <span class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium shadow-sm border-2 border-white"
-                          style="background-color: ${p.color}">
-                        ${p.pseudo.charAt(0).toUpperCase()}
-                    </span>
-                    <div class="absolute hidden group-hover:block top-full mt-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-20">
-                        ${p.pseudo}
+        if (container) {
+            let html = '';
+            participants.forEach(p => {
+                html += `
+                    <div class="relative group" title="${p.pseudo}">
+                        <span class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium shadow-sm border-2 border-white"
+                              style="background-color: ${p.color}">
+                            ${p.pseudo.charAt(0).toUpperCase()}
+                        </span>
+                        <div class="absolute hidden group-hover:block top-full mt-1 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-20">
+                            ${p.pseudo}
+                        </div>
                     </div>
-                </div>
-            `;
-        });
-        container.innerHTML = html;
+                `;
+            });
+            container.innerHTML = html;
+        }
 
         if (countEl) {
-            countEl.textContent = participants.length + ' connecté(s)';
+            countEl.textContent = participants.length + ' connecte(s)';
         }
+
+        // Update document presence indicators in sidebar
+        updateDocumentPresenceIndicators(participants);
     }
 
     // Cleanup on page leave
