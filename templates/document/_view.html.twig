@@ -47,6 +47,29 @@
         {% include 'document/_comparison_table.html.twig' %}
     {% endif %}
 
+    <!-- Chiffrages (Planning Poker) liés au document -->
+    <div id="estimations-container"
+         class="mt-8 pt-6 border-t {% if not estimations|default([])|length %}hidden{% endif %}"
+         hx-ext="sse"
+         sse-connect="{{ mercure_url }}?topic={{ ('/sessions/' ~ session.id ~ '/estimations')|url_encode }}"
+         hx-get="/session/{{ session.id }}/estimations?document_id={{ document.id }}"
+         hx-trigger="sse:estimation.created, sse:estimation.voted, sse:estimation.revealed"
+         hx-target="#estimations-list"
+         hx-swap="outerHTML">
+
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+            </svg>
+            <h3 class="text-lg font-semibold text-gray-900">Chiffrages</h3>
+            <span id="estimations-count" class="px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
+                {{ estimations|default([])|length }}
+            </span>
+        </div>
+
+        {% include 'estimation/_list.html.twig' with {'estimations': estimations|default([]), 'participant': participant} %}
+    </div>
+
     <!-- Décisions liées au document -->
     <div id="decisions-container"
          class="mt-8 pt-6 border-t {% if not decisions|default([])|length %}hidden{% endif %}"
@@ -157,6 +180,19 @@
                 const list = document.getElementById('decisions-list');
                 if (container && list && list.children.length > 0) {
                     container.classList.remove('hidden');
+                }
+            }
+            // Afficher le conteneur d'estimations quand de nouveaux chiffrages arrivent
+            if (evt.detail.target.id === 'estimations-list') {
+                const container = document.getElementById('estimations-container');
+                const list = document.getElementById('estimations-list');
+                if (container && list && list.children.length > 0) {
+                    container.classList.remove('hidden');
+                    // Mettre à jour le compteur
+                    const countBadge = document.getElementById('estimations-count');
+                    if (countBadge) {
+                        countBadge.textContent = list.children.length;
+                    }
                 }
             }
         });

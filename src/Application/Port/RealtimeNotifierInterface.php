@@ -7,6 +7,7 @@ namespace App\Application\Port;
 use App\Application\DTO\Response\AnnotationResponse;
 use App\Application\DTO\Response\DecisionResponse;
 use App\Application\DTO\Response\DocumentResponse;
+use App\Application\DTO\Response\EstimationResponse;
 use App\Application\DTO\Response\ParticipantResponse;
 
 interface RealtimeNotifierInterface
@@ -34,4 +35,11 @@ interface RealtimeNotifierInterface
     public function notifyDecisionValidated(string $sessionId, DecisionResponse $decision): void;
 
     public function notifyVoteCast(string $sessionId, DecisionResponse $decision): void;
+
+    // Estimation (Chiffrage) notifications
+    public function notifyEstimationCreated(string $sessionId, EstimationResponse $estimation): void;
+
+    public function notifyEstimationVoted(string $sessionId, string $estimationId, string $participantId, int $voteCount): void;
+
+    public function notifyEstimationRevealed(string $sessionId, EstimationResponse $estimation): void;
 }

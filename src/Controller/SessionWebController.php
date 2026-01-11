@@ -12,6 +12,12 @@ use App\Application\Command\Document\CreateDocumentCommand;
 use App\Application\Command\Document\CreateDocumentHandler;
 use App\Application\Command\Document\UpdateDocumentCommand;
 use App\Application\Command\Document\UpdateDocumentHandler;
+use App\Application\Command\Estimation\CreateEstimationCommand;
+use App\Application\Command\Estimation\CreateEstimationHandler;
+use App\Application\Command\Estimation\RevealEstimationCommand;
+use App\Application\Command\Estimation\RevealEstimationHandler;
+use App\Application\Command\Estimation\VoteEstimationCommand;
+use App\Application\Command\Estimation\VoteEstimationHandler;
 use App\Application\Command\Session\CreateSessionCommand;
 use App\Application\Command\Session\CreateSessionHandler;
 use App\Application\Command\Session\JoinSessionCommand;
@@ -22,6 +28,7 @@ use App\Entity\Session;
 use App\Repository\AnnotationRepository;
 use App\Repository\DecisionRepository;
 use App\Repository\DocumentRepository;
+use App\Repository\EstimationRepository;
 use App\Repository\ParticipantRepository;
 use App\Repository\SessionRepository;
 use App\Service\Export\ExportService;
@@ -43,12 +50,16 @@ class SessionWebController extends AbstractController
         private readonly CreateAnnotationHandler $createAnnotationHandler,
         private readonly VoteHandler $voteHandler,
         private readonly ValidateDecisionHandler $validateDecisionHandler,
+        private readonly CreateEstimationHandler $createEstimationHandler,
+        private readonly VoteEstimationHandler $voteEstimationHandler,
+        private readonly RevealEstimationHandler $revealEstimationHandler,
         private readonly SessionService $sessionService,
         private readonly SessionRepository $sessionRepository,
         private readonly DocumentRepository $documentRepository,
         private readonly ParticipantRepository $participantRepository,
         private readonly AnnotationRepository $annotationRepository,
         private readonly DecisionRepository $decisionRepository,
+        private readonly EstimationRepository $estimationRepository,
         private readonly ExportService $exportService,
     ) {}
 
@@ -225,6 +236,9 @@ class SessionWebController extends AbstractController
         // Get all decisions linked to this document
         $decisions = $this->decisionRepository->findBy(['linkedDocument' => $document], ['createdAt' => 'ASC']);
 
+        // Get all estimations linked to this document
+        $estimations = $this->estimationRepository->findBy(['linkedDocument' => $document], ['createdAt' => 'DESC']);
+
         $mercureUrl = $this->getParameter('mercure.public_url') ?? 'https://localhost/.well-known/mercure';
 
         if ($this->isHtmxRequest($httpSession)) {
@@ -234,6 +248,7 @@ class SessionWebController extends AbstractController
                 'document' => $document,
                 'annotations' => $annotations,
                 'decisions' => $decisions,
+                'estimations' => $estimations,
                 'mercure_url' => $mercureUrl,
             ]);
         }
@@ -246,6 +261,7 @@ class SessionWebController extends AbstractController
             'annotations' => $annotations,
             'onlineParticipants' => $onlineParticipants,
             'decisions' => $decisions,
+            'estimations' => $estimations,
             'mercure_url' => $mercureUrl,
         ]);
     }
@@ -518,6 +534,169 @@ class SessionWebController extends AbstractController
 
         return $this->render('decision/_card.html.twig', [
             'decision' => $decision,
+            'participant' => $participant,
+            'session' => $session,
+        ]);
+    }
+
+    // ============================================
+    // Estimation (Chiffrage) Routes
+    // ============================================
+
+    #[Route('/session/{id}/estimations', name: 'session_estimations')]
+    public function estimations(string $id, Request $request, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
+
+        $documentId = $request->query->get('document_id');
+
+        $criteria = ['session' => $session];
+        if ($documentId) {
+            $document = $this->documentRepository->find(Uuid::fromString($documentId));
+            if ($document) {
+                $criteria['linkedDocument'] = $document;
+            }
+        }
+
+        $estimations = $this->estimationRepository->findBy($criteria, ['createdAt' => 'DESC']);
+
+        return $this->render('estimation/_list.html.twig', [
+            'session' => $session,
+            'participant' => $participant,
+            'estimations' => $estimations,
+        ]);
+    }
+
+    #[Route('/session/{id}/estimation/create-form', name: 'session_estimation_create_form', methods: ['GET'])]
+    public function estimationCreateForm(string $id, Request $request, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+
+        $documentId = $request->query->get('document_id');
+        $document = null;
+        if ($documentId) {
+            $document = $this->documentRepository->find(Uuid::fromString($documentId));
+        }
+
+        return $this->render('estimation/_create_form.html.twig', [
+            'session' => $session,
+            'document' => $document,
+        ]);
+    }
+
+    #[Route('/session/{id}/estimation/create', name: 'session_estimation_create', methods: ['POST'])]
+    public function createEstimation(string $id, Request $request, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
+
+        $title = $request->request->get('title');
+        if (empty($title)) {
+            return new Response('Titre requis', Response::HTTP_BAD_REQUEST);
+        }
+
+        $command = new CreateEstimationCommand(
+            sessionId: $id,
+            title: $title,
+            description: $request->request->get('description') ?: null,
+            linkedDocumentId: $request->request->get('document_id') ?: null,
+        );
+
+        ($this->createEstimationHandler)($command);
+
+        // Return the updated list
+        $documentId = $request->request->get('document_id');
+        $criteria = ['session' => $session];
+        if ($documentId) {
+            $document = $this->documentRepository->find(Uuid::fromString($documentId));
+            if ($document) {
+                $criteria['linkedDocument'] = $document;
+            }
+        }
+
+        $estimations = $this->estimationRepository->findBy($criteria, ['createdAt' => 'DESC']);
+
+        return $this->render('estimation/_list.html.twig', [
+            'session' => $session,
+            'participant' => $participant,
+            'estimations' => $estimations,
+        ]);
+    }
+
+    #[Route('/session/{id}/estimation/{estimationId}/vote', name: 'session_estimation_vote', methods: ['POST'])]
+    public function voteEstimation(string $id, string $estimationId, Request $request, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
+
+        $estimation = $this->estimationRepository->find(Uuid::fromString($estimationId));
+        if ($estimation === null || $estimation->getSession()->getId()->toString() !== $id) {
+            throw $this->createNotFoundException('Chiffrage non trouvé');
+        }
+
+        $value = $request->request->get('value');
+        if ($value === null) {
+            throw $this->createNotFoundException('Valeur requise');
+        }
+
+        $command = new VoteEstimationCommand(
+            estimationId: $estimationId,
+            participantId: $participant->getId()->toString(),
+            value: (string) $value,
+        );
+
+        ($this->voteEstimationHandler)($command);
+
+        // Refresh the estimation entity
+        $estimation = $this->estimationRepository->findByIdWithVotes($estimationId);
+
+        return $this->render('estimation/_card.html.twig', [
+            'estimation' => $estimation,
+            'participant' => $participant,
+            'session' => $session,
+        ]);
+    }
+
+    #[Route('/session/{id}/estimation/{estimationId}/reveal', name: 'session_estimation_reveal', methods: ['POST'])]
+    public function revealEstimation(string $id, string $estimationId, SessionInterface $httpSession): Response
+    {
+        $session = $this->getSessionOrFail($id);
+        $participantOrRedirect = $this->getParticipantOrRedirect($httpSession, $session);
+        if ($participantOrRedirect instanceof Response) {
+            return $participantOrRedirect;
+        }
+        $participant = $participantOrRedirect;
+
+        $estimation = $this->estimationRepository->find(Uuid::fromString($estimationId));
+        if ($estimation === null || $estimation->getSession()->getId()->toString() !== $id) {
+            throw $this->createNotFoundException('Chiffrage non trouvé');
+        }
+
+        $command = new RevealEstimationCommand(estimationId: $estimationId);
+        ($this->revealEstimationHandler)($command);
+
+        // Refresh the estimation entity
+        $estimation = $this->estimationRepository->findByIdWithVotes($estimationId);
+
+        return $this->render('estimation/_card.html.twig', [
+            'estimation' => $estimation,
             'participant' => $participant,
             'session' => $session,
         ]);

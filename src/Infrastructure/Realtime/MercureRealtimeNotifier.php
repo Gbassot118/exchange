@@ -7,6 +7,7 @@ namespace App\Infrastructure\Realtime;
 use App\Application\DTO\Response\AnnotationResponse;
 use App\Application\DTO\Response\DecisionResponse;
 use App\Application\DTO\Response\DocumentResponse;
+use App\Application\DTO\Response\EstimationResponse;
 use App\Application\DTO\Response\ParticipantResponse;
 use App\Application\Port\RealtimeNotifierInterface;
 use App\Service\Mercure\MercurePublisher;
@@ -105,5 +106,22 @@ final readonly class MercureRealtimeNotifier implements RealtimeNotifierInterfac
             $decisionArray['id'],
             $decisionArray['vote_stats']
         );
+    }
+
+    // Estimation (Chiffrage) notifications
+
+    public function notifyEstimationCreated(string $sessionId, EstimationResponse $estimation): void
+    {
+        $this->mercurePublisher->publishEstimationCreated($sessionId, $estimation->toArray());
+    }
+
+    public function notifyEstimationVoted(string $sessionId, string $estimationId, string $participantId, int $voteCount): void
+    {
+        $this->mercurePublisher->publishEstimationVoted($sessionId, $estimationId, $participantId, $voteCount);
+    }
+
+    public function notifyEstimationRevealed(string $sessionId, EstimationResponse $estimation): void
+    {
+        $this->mercurePublisher->publishEstimationRevealed($sessionId, $estimation->toArray());
     }
 }

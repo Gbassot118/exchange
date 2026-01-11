@@ -12,6 +12,12 @@ use App\Application\Command\Document\DeleteDocumentCommand;
 use App\Application\Command\Document\DeleteDocumentHandler;
 use App\Application\Command\Document\UpdateDocumentCommand;
 use App\Application\Command\Document\UpdateDocumentHandler;
+use App\Application\Command\Estimation\CreateEstimationCommand;
+use App\Application\Command\Estimation\CreateEstimationHandler;
+use App\Application\Command\Estimation\RevealEstimationCommand;
+use App\Application\Command\Estimation\RevealEstimationHandler;
+use App\Application\Command\Estimation\VoteEstimationCommand;
+use App\Application\Command\Estimation\VoteEstimationHandler;
 use App\Application\Command\Session\UpdateSessionStatusCommand;
 use App\Application\Command\Session\UpdateSessionStatusHandler;
 use App\Application\DTO\Request\CreateDocumentRequest;
@@ -23,11 +29,19 @@ use App\Application\Query\Document\GetDocumentQuery;
 use App\Application\Query\Document\GetDocumentHandler;
 use App\Application\Query\Document\ListDocumentsQuery;
 use App\Application\Query\Document\ListDocumentsHandler;
+use App\Application\Query\Estimation\GetEstimationHandler;
+use App\Application\Query\Estimation\GetEstimationQuery;
+use App\Application\Query\Estimation\ListEstimationsHandler;
+use App\Application\Query\Estimation\ListEstimationsQuery;
 use App\Application\Query\Session\GetSessionStatusQuery;
 use App\Application\Query\Session\GetSessionStatusHandler;
 use App\Domain\Collaboration\Exception\AnnotationNotFoundException;
 use App\Domain\Collaboration\Exception\CannotReplyToReplyException;
 use App\Domain\Document\Exception\DocumentNotFoundException;
+use App\Domain\Estimation\Exception\EstimationAlreadyRevealedException;
+use App\Domain\Estimation\Exception\EstimationNotFoundException;
+use App\Domain\Estimation\Exception\InvalidFibonacciValueException;
+use App\Domain\Estimation\ValueObject\FibonacciValue;
 use App\Domain\Session\Exception\InvalidSessionStatusTransitionException;
 use App\Domain\Session\Exception\ParticipantNotFoundException;
 use App\Domain\Session\Exception\SessionNotFoundException;
@@ -54,6 +68,11 @@ class McpController extends AbstractController
         private readonly RespondAnnotationHandler $respondAnnotationHandler,
         private readonly AcknowledgeAnnotationHandler $acknowledgeAnnotationHandler,
         private readonly ParticipantValidator $participantValidator,
+        private readonly CreateEstimationHandler $createEstimationHandler,
+        private readonly ListEstimationsHandler $listEstimationsHandler,
+        private readonly GetEstimationHandler $getEstimationHandler,
+        private readonly VoteEstimationHandler $voteEstimationHandler,
+        private readonly RevealEstimationHandler $revealEstimationHandler,
     ) {}
 
     #[Route('/sessions/{sessionId}/documents', name: 'list_documents', methods: ['GET'])]
@@ -359,6 +378,155 @@ class McpController extends AbstractController
             return $this->json($annotation->toArray());
         } catch (AnnotationNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    // ============================================
+    // Estimation (Chiffrage) Endpoints
+    // ============================================
+
+    #[Route('/sessions/{sessionId}/estimations', name: 'list_estimations', methods: ['GET'])]
+    public function listEstimations(string $sessionId, Request $request): JsonResponse
+    {
+        try {
+            $query = new ListEstimationsQuery(
+                sessionId: $sessionId,
+                status: $request->query->get('status'),
+                documentId: $request->query->get('document_id'),
+            );
+
+            $estimations = ($this->listEstimationsHandler)($query);
+
+            return $this->json([
+                'estimations' => array_map(fn($e) => $e->toArray(), $estimations),
+                'fibonacci_values' => FibonacciValue::VALUES,
+            ]);
+        } catch (SessionNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    #[Route('/sessions/{sessionId}/estimations', name: 'create_estimation', methods: ['POST'])]
+    public function createEstimation(string $sessionId, Request $request): JsonResponse
+    {
+        try {
+            $data = $request->toArray();
+            $agentId = $request->headers->get('X-Agent-Id');
+
+            if (empty($data['title'])) {
+                return $this->json(['error' => 'Le titre est requis'], Response::HTTP_BAD_REQUEST);
+            }
+
+            // Validate that the agent belongs to this session (write operation)
+            if (!empty($agentId)) {
+                $this->participantValidator->validateParticipantInSession($agentId, $sessionId);
+            }
+
+            $command = new CreateEstimationCommand(
+                sessionId: $sessionId,
+                title: $data['title'],
+                description: $data['description'] ?? null,
+                linkedDocumentId: $data['linked_document_id'] ?? $data['document_id'] ?? null,
+            );
+
+            $estimation = ($this->createEstimationHandler)($command);
+
+            return $this->json($estimation->toArray(), Response::HTTP_CREATED);
+        } catch (InvalidParticipantException $e) {
+            return $this->json(['error' => $e->getMessage()], $e->getStatusCode());
+        } catch (SessionNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    #[Route('/estimations/{estimationId}', name: 'get_estimation', methods: ['GET'])]
+    public function getEstimation(string $estimationId): JsonResponse
+    {
+        try {
+            $query = new GetEstimationQuery(
+                estimationId: $estimationId,
+                includeVotes: true,
+            );
+
+            $estimation = ($this->getEstimationHandler)($query);
+
+            return $this->json($estimation->toArray());
+        } catch (EstimationNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    #[Route('/estimations/{estimationId}/vote', name: 'vote_estimation', methods: ['POST'])]
+    public function voteEstimation(string $estimationId, Request $request): JsonResponse
+    {
+        try {
+            $data = $request->toArray();
+            $agentId = $request->headers->get('X-Agent-Id');
+
+            if (empty($agentId)) {
+                return $this->json(['error' => 'X-Agent-Id header est requis'], Response::HTTP_BAD_REQUEST);
+            }
+
+            if (!isset($data['value'])) {
+                return $this->json([
+                    'error' => 'value est requis',
+                    'valid_values' => FibonacciValue::VALUES,
+                ], Response::HTTP_BAD_REQUEST);
+            }
+
+            $value = (string) $data['value'];
+            if (!FibonacciValue::isValid($value)) {
+                return $this->json([
+                    'error' => 'Valeur Fibonacci invalide',
+                    'valid_values' => FibonacciValue::VALUES,
+                ], Response::HTTP_BAD_REQUEST);
+            }
+
+            $command = new VoteEstimationCommand(
+                estimationId: $estimationId,
+                participantId: $agentId,
+                value: $value,
+            );
+
+            $estimation = ($this->voteEstimationHandler)($command);
+
+            return $this->json([
+                'estimation' => $estimation->toArray(),
+                'voted' => true,
+            ]);
+        } catch (EstimationNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (ParticipantNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (EstimationAlreadyRevealedException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_CONFLICT);
+        } catch (InvalidFibonacciValueException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    #[Route('/estimations/{estimationId}/reveal', name: 'reveal_estimation', methods: ['POST'])]
+    public function revealEstimation(string $estimationId): JsonResponse
+    {
+        try {
+            $command = new RevealEstimationCommand(estimationId: $estimationId);
+            $estimation = ($this->revealEstimationHandler)($command);
+
+            return $this->json($estimation->toArray());
+        } catch (EstimationNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (EstimationAlreadyRevealedException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
