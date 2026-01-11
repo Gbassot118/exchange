@@ -143,6 +143,38 @@ class McpController extends AbstractController
         }
     }
 
+    /**
+     * Met à jour le statut d'une session.
+     *
+     * L'agent DOIT mettre à jour le statut de la session selon son cycle de vie:
+     * - 'preparation' -> 'en_cours': Quand le travail collaboratif commence réellement
+     * - 'en_cours' -> 'termine': Quand toutes les annotations sont traitées et les décisions prises
+     * - 'termine' -> 'archive': Pour archiver une session terminée
+     *
+     * Body JSON: {"status": "en_cours"}
+     */
+    #[Route('/sessions/{sessionId}/status', name: 'update_session_status', methods: ['PATCH'])]
+    public function updateSessionStatus(string $sessionId, Request $request): JsonResponse
+    {
+        try {
+            $data = $request->toArray();
+
+            if (empty($data['status'])) {
+                return $this->json([
+                    'error' => 'Le statut est requis',
+                    'valid_statuses' => ['preparation', 'en_cours', 'termine', 'archive'],
+                    'hint' => 'Utilisez "en_cours" quand vous commencez à travailler sur la session',
+                ], Response::HTTP_BAD_REQUEST);
+            }
+
+            $session = $this->mcpService->updateSessionStatus($sessionId, $data['status']);
+
+            return $this->json($session);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
     #[Route('/annotations/{annotationId}/respond', name: 'respond_annotation', methods: ['POST'])]
     public function respondToAnnotation(string $annotationId, Request $request): JsonResponse
     {
