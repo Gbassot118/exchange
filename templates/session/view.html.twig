@@ -30,8 +30,11 @@
         </div>
     </main>
 
-    <!-- Panel annotations -->
-    <aside class="w-80 bg-white border-l border-gray-200 flex flex-col" id="annotations-panel">
+    <!-- Resize handle -->
+    <div id="resize-handle" class="w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize transition-colors flex-shrink-0"></div>
+
+    <!-- Panel annotations (resizable) -->
+    <aside class="bg-white border-l border-gray-200 flex flex-col" id="annotations-panel" style="width: 320px; min-width: 280px; max-width: 900px;">
         {% include 'annotation/_panel.html.twig' %}
     </aside>
 </div>
@@ -233,5 +236,48 @@
     window.addEventListener('beforeunload', () => {
         eventSource.close();
     });
+
+    // Panel resize functionality
+    (function() {
+        const handle = document.getElementById('resize-handle');
+        const panel = document.getElementById('annotations-panel');
+        const STORAGE_KEY = 'annotations-panel-width';
+        const MIN_WIDTH = 280;
+        const MAX_WIDTH = 900;
+
+        // Restore saved width
+        const savedWidth = localStorage.getItem(STORAGE_KEY);
+        if (savedWidth) {
+            panel.style.width = Math.min(Math.max(parseInt(savedWidth), MIN_WIDTH), MAX_WIDTH) + 'px';
+        }
+
+        let isResizing = false;
+        let startX, startWidth;
+
+        handle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = panel.offsetWidth;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const diff = startX - e.clientX; // Inverse car panel à droite
+            const newWidth = Math.min(Math.max(startWidth + diff, MIN_WIDTH), MAX_WIDTH);
+            panel.style.width = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem(STORAGE_KEY, panel.offsetWidth);
+            }
+        });
+    })();
 </script>
 {% endblock %}

@@ -119,3 +119,32 @@
     </div>
 </div>
 {% endblock %}
+
+{% block javascripts %}
+{{ parent() }}
+<script>
+(function() {
+    const STORAGE_KEY = 'exchange-user-pseudo';
+    const pseudoFields = ['#pseudo', '#join_pseudo', '#join_pseudo_manual'];
+
+    // Restaurer le pseudo sauvegardé
+    const savedPseudo = localStorage.getItem(STORAGE_KEY);
+    if (savedPseudo) {
+        pseudoFields.forEach(selector => {
+            const field = document.querySelector(selector);
+            if (field) field.value = savedPseudo;
+        });
+    }
+
+    // Sauvegarder le pseudo lors de la soumission
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', () => {
+            const pseudoInput = form.querySelector('input[name="pseudo"]');
+            if (pseudoInput && pseudoInput.value.trim()) {
+                localStorage.setItem(STORAGE_KEY, pseudoInput.value.trim());
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}
