@@ -21,11 +21,11 @@
            hx-target="#document-content"
            hx-swap="innerHTML"
            hx-push-url="true"
-           class="flex items-center flex-1 px-2 py-1.5 rounded text-sm hover:bg-gray-100 group
+           class="flex items-start flex-1 px-2 py-1.5 rounded text-sm hover:bg-gray-100 group
                   {% if currentDocument is defined and currentDocument and currentDocument.id == document.id %}bg-blue-50 text-blue-700{% else %}text-gray-700{% endif %}">
 
             {# Icone type #}
-            <span class="mr-2 flex-shrink-0">
+            <span class="mr-2 flex-shrink-0 mt-0.5">
                 {% if document.type == 'synthesis' %}
                     <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -45,16 +45,19 @@
                 {% endif %}
             </span>
 
-            <span class="truncate flex-1">{{ document.title }}</span>
-
-            {# Pastilles de presence des participants regardant ce document #}
-            <span class="presence-indicators flex items-center gap-0.5 ml-1" id="presence-doc-{{ document.id }}"></span>
-
-            {% if document.annotations|length > 0 %}
-                <span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
-                    {{ document.annotations|length }}
+            {# Titre et pastilles empiles verticalement #}
+            <span class="flex-1 min-w-0">
+                <span class="flex items-center">
+                    <span class="truncate">{{ document.title }}</span>
+                    {% if document.annotations|length > 0 %}
+                        <span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 flex-shrink-0">
+                            {{ document.annotations|length }}
+                        </span>
+                    {% endif %}
                 </span>
-            {% endif %}
+                {# Pastilles de presence en dessous du titre, alignees a gauche #}
+                <span class="presence-indicators flex items-center gap-0.5 mt-0.5" id="presence-doc-{{ document.id }}"></span>
+            </span>
         </a>
     </div>
 
