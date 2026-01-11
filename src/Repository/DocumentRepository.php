@@ -2,6 +2,8 @@
 
 namespace App\Repository;
 
+use App\Domain\Document\Repository\DocumentRepositoryInterface;
+use App\Domain\Document\ValueObject\DocumentId;
 use App\Entity\Document;
 use App\Entity\Session;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -11,14 +13,14 @@ use Symfony\Component\Uid\Uuid;
 /**
  * @extends ServiceEntityRepository<Document>
  */
-class DocumentRepository extends ServiceEntityRepository
+class DocumentRepository extends ServiceEntityRepository implements DocumentRepositoryInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, Document::class);
     }
 
-    public function save(Document $entity, bool $flush = false): void
+    public function save(Document $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
 
@@ -27,7 +29,7 @@ class DocumentRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Document $entity, bool $flush = false): void
+    public function remove(Document $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
 
@@ -36,10 +38,25 @@ class DocumentRepository extends ServiceEntityRepository
         }
     }
 
+    public function findById(DocumentId $id): ?Document
+    {
+        return $this->find($id->value());
+    }
+
+    public function findBySlug(Session $session, string $slug): ?Document
+    {
+        return $this->findOneBySessionAndSlug($session, $slug);
+    }
+
+    public function findChildren(Document $parent): array
+    {
+        return $this->findBySession($parent->getSession(), $parent->getId()->toString(), null);
+    }
+
     /**
      * @return Document[]
      */
-    public function findBySession(Session $session, ?Uuid $parentId = null, ?string $type = null): array
+    public function findBySession(Session $session, ?string $parentId = null, ?string $type = null): array
     {
         $qb = $this->createQueryBuilder('d')
             ->where('d.session = :session')
@@ -48,7 +65,7 @@ class DocumentRepository extends ServiceEntityRepository
 
         if ($parentId !== null) {
             $qb->andWhere('d.parent = :parentId')
-               ->setParameter('parentId', $parentId, 'uuid');
+               ->setParameter('parentId', Uuid::fromString($parentId), 'uuid');
         } else {
             $qb->andWhere('d.parent IS NULL');
         }
@@ -59,6 +76,14 @@ class DocumentRepository extends ServiceEntityRepository
         }
 
         return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * @return Document[]
+     */
+    public function findBySessionWithUuid(Session $session, ?Uuid $parentId = null, ?string $type = null): array
+    {
+        return $this->findBySession($session, $parentId?->toString(), $type);
     }
 
     /**
@@ -77,7 +102,7 @@ class DocumentRepository extends ServiceEntityRepository
         ]);
     }
 
-    public function getMaxSortOrder(Session $session, ?Document $parent): int
+    public function getMaxSortOrder(Session $session, ?Document $parent = null): int
     {
         $qb = $this->createQueryBuilder('d')
             ->select('MAX(d.sortOrder)')

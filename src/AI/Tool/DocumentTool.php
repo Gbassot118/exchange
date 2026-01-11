@@ -1,13 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\AI\Tool;
 
-use App\Repository\DocumentRepository;
-use App\Repository\SessionRepository;
-use App\Repository\ParticipantRepository;
-use App\Service\Document\DocumentService;
+use App\Application\Command\Document\CreateDocumentCommand;
+use App\Application\Command\Document\UpdateDocumentCommand;
+use App\Application\DTO\Response\DocumentResponse;
+use App\Application\Query\Document\GetDocumentQuery;
+use App\Application\Query\Document\ListDocumentsQuery;
 use Symfony\AI\Attribute\AsTool;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 #[AsTool(
     name: 'document_operations',
@@ -53,10 +58,7 @@ use Symfony\Component\Uid\Uuid;
 class DocumentTool
 {
     public function __construct(
-        private readonly DocumentService $documentService,
-        private readonly DocumentRepository $documentRepository,
-        private readonly SessionRepository $sessionRepository,
-        private readonly ParticipantRepository $participantRepository,
+        private readonly MessageBusInterface $messageBus,
     ) {}
 
     public function __invoke(
@@ -85,27 +87,31 @@ class DocumentTool
         }
 
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($sessionId));
-            if ($session === null) {
-                return ['error' => 'Session not found'];
+            $query = new ListDocumentsQuery(
+                sessionId: $sessionId,
+                includeContent: false,
+            );
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
             }
 
-            $documents = $this->documentRepository->findBySession($session, null, null);
+            /** @var array<DocumentResponse> $documents */
+            $documents = $handledStamp->getResult();
 
             return [
-                'documents' => array_map(fn($doc) => [
-                    'id' => $doc->getId()->toString(),
-                    'title' => $doc->getTitle(),
-                    'slug' => $doc->getSlug(),
-                    'type' => $doc->getType(),
-                    'parent_id' => $doc->getParent()?->getId()->toString(),
-                    'current_version' => $doc->getCurrentVersion(),
-                    'created_at' => $doc->getCreatedAt()->format('c'),
-                    'updated_at' => $doc->getUpdatedAt()->format('c'),
-                ], $documents),
+                'documents' => array_map(
+                    fn(DocumentResponse $doc) => $doc->toArray(),
+                    $documents
+                ),
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid session_id format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
     }
 
@@ -116,28 +122,26 @@ class DocumentTool
         }
 
         try {
-            $document = $this->documentRepository->find(Uuid::fromString($documentId));
-            if ($document === null) {
-                return ['error' => 'Document not found'];
+            $query = new GetDocumentQuery(
+                documentId: $documentId,
+                includeContent: true,
+            );
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
             }
 
-            return [
-                'document' => [
-                    'id' => $document->getId()->toString(),
-                    'title' => $document->getTitle(),
-                    'slug' => $document->getSlug(),
-                    'content' => $document->getContent(),
-                    'type' => $document->getType(),
-                    'metadata' => $document->getMetadata(),
-                    'parent_id' => $document->getParent()?->getId()->toString(),
-                    'current_version' => $document->getCurrentVersion(),
-                    'session_id' => $document->getSession()->getId()->toString(),
-                    'created_at' => $document->getCreatedAt()->format('c'),
-                    'updated_at' => $document->getUpdatedAt()->format('c'),
-                ],
-            ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid document_id format'];
+            /** @var DocumentResponse $document */
+            $document = $handledStamp->getResult();
+
+            return ['document' => $document->toArray()];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
     }
 
@@ -160,36 +164,36 @@ class DocumentTool
         }
 
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($sessionId));
-            if ($session === null) {
-                return ['error' => 'Session not found'];
+            $command = new CreateDocumentCommand(
+                sessionId: $sessionId,
+                title: $title,
+                type: $type ?? 'general',
+                content: $content,
+                parentId: $parentId,
+                authorParticipantId: $participantId,
+            );
+
+            $envelope = $this->messageBus->dispatch($command);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Command was not handled'];
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-            if ($participant === null) {
-                return ['error' => 'Participant not found'];
-            }
-
-            $data = [
-                'title' => $title,
-                'content' => $content ?? '',
-                'type' => $type ?? 'general',
-                'parent_id' => $parentId,
-            ];
-
-            $document = $this->documentService->create($session, $data, $participant);
+            /** @var DocumentResponse $document */
+            $document = $handledStamp->getResult();
 
             return [
                 'success' => true,
                 'document' => [
-                    'id' => $document->getId()->toString(),
-                    'title' => $document->getTitle(),
-                    'slug' => $document->getSlug(),
-                    'type' => $document->getType(),
+                    'id' => $document->id,
+                    'title' => $document->title,
+                    'slug' => $document->slug,
+                    'type' => $document->type,
                 ],
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }
@@ -209,40 +213,40 @@ class DocumentTool
             return ['error' => 'participant_id is required for update operation'];
         }
 
+        if ($title === null && $content === null && $type === null) {
+            return ['error' => 'At least one field (title, content, type) must be provided for update'];
+        }
+
         try {
-            $document = $this->documentRepository->find(Uuid::fromString($documentId));
-            if ($document === null) {
-                return ['error' => 'Document not found'];
+            $command = new UpdateDocumentCommand(
+                documentId: $documentId,
+                title: $title,
+                content: $content,
+                type: $type,
+                authorParticipantId: $participantId,
+            );
+
+            $envelope = $this->messageBus->dispatch($command);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Command was not handled'];
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-            if ($participant === null) {
-                return ['error' => 'Participant not found'];
-            }
-
-            $data = array_filter([
-                'title' => $title,
-                'content' => $content,
-                'type' => $type,
-            ]);
-
-            if (empty($data)) {
-                return ['error' => 'At least one field (title, content, type) must be provided for update'];
-            }
-
-            $document = $this->documentService->update($document, $data, $participant);
+            /** @var DocumentResponse $document */
+            $document = $handledStamp->getResult();
 
             return [
                 'success' => true,
                 'document' => [
-                    'id' => $document->getId()->toString(),
-                    'title' => $document->getTitle(),
-                    'slug' => $document->getSlug(),
-                    'current_version' => $document->getCurrentVersion(),
+                    'id' => $document->id,
+                    'title' => $document->title,
+                    'slug' => $document->slug,
+                    'current_version' => $document->currentVersion,
                 ],
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }

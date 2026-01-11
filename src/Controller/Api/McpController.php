@@ -2,7 +2,35 @@
 
 namespace App\Controller\Api;
 
-use App\Service\Mcp\McpService;
+use App\Application\Command\Annotation\AcknowledgeAnnotationCommand;
+use App\Application\Command\Annotation\AcknowledgeAnnotationHandler;
+use App\Application\Command\Annotation\RespondAnnotationCommand;
+use App\Application\Command\Annotation\RespondAnnotationHandler;
+use App\Application\Command\Document\CreateDocumentCommand;
+use App\Application\Command\Document\CreateDocumentHandler;
+use App\Application\Command\Document\DeleteDocumentCommand;
+use App\Application\Command\Document\DeleteDocumentHandler;
+use App\Application\Command\Document\UpdateDocumentCommand;
+use App\Application\Command\Document\UpdateDocumentHandler;
+use App\Application\Command\Session\UpdateSessionStatusCommand;
+use App\Application\Command\Session\UpdateSessionStatusHandler;
+use App\Application\DTO\Request\CreateDocumentRequest;
+use App\Application\DTO\Request\UpdateDocumentRequest;
+use App\Application\DTO\Request\UpdateSessionStatusRequest;
+use App\Application\Query\Annotation\ListAnnotationsQuery;
+use App\Application\Query\Annotation\ListAnnotationsHandler;
+use App\Application\Query\Document\GetDocumentQuery;
+use App\Application\Query\Document\GetDocumentHandler;
+use App\Application\Query\Document\ListDocumentsQuery;
+use App\Application\Query\Document\ListDocumentsHandler;
+use App\Application\Query\Session\GetSessionStatusQuery;
+use App\Application\Query\Session\GetSessionStatusHandler;
+use App\Domain\Collaboration\Exception\AnnotationNotFoundException;
+use App\Domain\Collaboration\Exception\CannotReplyToReplyException;
+use App\Domain\Document\Exception\DocumentNotFoundException;
+use App\Domain\Session\Exception\InvalidSessionStatusTransitionException;
+use App\Domain\Session\Exception\ParticipantNotFoundException;
+use App\Domain\Session\Exception\SessionNotFoundException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -13,21 +41,38 @@ use Symfony\Component\Routing\Attribute\Route;
 class McpController extends AbstractController
 {
     public function __construct(
-        private readonly McpService $mcpService,
+        private readonly ListDocumentsHandler $listDocumentsHandler,
+        private readonly GetDocumentHandler $getDocumentHandler,
+        private readonly CreateDocumentHandler $createDocumentHandler,
+        private readonly UpdateDocumentHandler $updateDocumentHandler,
+        private readonly DeleteDocumentHandler $deleteDocumentHandler,
+        private readonly ListAnnotationsHandler $listAnnotationsHandler,
+        private readonly GetSessionStatusHandler $getSessionStatusHandler,
+        private readonly UpdateSessionStatusHandler $updateSessionStatusHandler,
+        private readonly RespondAnnotationHandler $respondAnnotationHandler,
+        private readonly AcknowledgeAnnotationHandler $acknowledgeAnnotationHandler,
     ) {}
 
     #[Route('/sessions/{sessionId}/documents', name: 'list_documents', methods: ['GET'])]
     public function listDocuments(string $sessionId, Request $request): JsonResponse
     {
         try {
-            $parentId = $request->query->get('parent_id');
-            $type = $request->query->get('type');
+            $query = new ListDocumentsQuery(
+                sessionId: $sessionId,
+                parentId: $request->query->get('parent_id'),
+                type: $request->query->get('type'),
+                includeContent: false,
+            );
 
-            $documents = $this->mcpService->listDocuments($sessionId, $parentId, $type);
+            $documents = ($this->listDocumentsHandler)($query);
 
-            return $this->json(['documents' => $documents]);
-        } catch (\InvalidArgumentException $e) {
+            return $this->json([
+                'documents' => array_map(fn($d) => $d->toArray(), $documents),
+            ]);
+        } catch (SessionNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -35,14 +80,20 @@ class McpController extends AbstractController
     public function readDocument(string $documentId, Request $request): JsonResponse
     {
         try {
-            $includeAnnotations = $request->query->getBoolean('include_annotations', false);
-            $includeVersions = $request->query->getBoolean('include_versions', false);
+            $query = new GetDocumentQuery(
+                documentId: $documentId,
+                includeContent: true,
+                includeAnnotations: $request->query->getBoolean('include_annotations', false),
+                includeVersions: $request->query->getBoolean('include_versions', false),
+            );
 
-            $document = $this->mcpService->readDocument($documentId, $includeAnnotations, $includeVersions);
+            $document = ($this->getDocumentHandler)($query);
 
-            return $this->json($document);
-        } catch (\InvalidArgumentException $e) {
+            return $this->json($document->toArray());
+        } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -51,17 +102,31 @@ class McpController extends AbstractController
     {
         try {
             $data = $request->toArray();
+            $dto = CreateDocumentRequest::fromArray($data);
             $agentId = $request->headers->get('X-Agent-Id');
 
-            if (empty($data['title'])) {
+            if (empty($dto->title)) {
                 return $this->json(['error' => 'Le titre est requis'], Response::HTTP_BAD_REQUEST);
             }
 
-            $document = $this->mcpService->createDocument($sessionId, $data, $agentId);
+            $command = new CreateDocumentCommand(
+                sessionId: $sessionId,
+                title: $dto->title,
+                type: $dto->type ?: 'general',
+                content: $dto->content,
+                metadata: $dto->metadata,
+                parentId: $dto->parentId,
+                sortOrder: $dto->sortOrder,
+                authorParticipantId: $agentId,
+            );
 
-            return $this->json($document, Response::HTTP_CREATED);
-        } catch (\InvalidArgumentException $e) {
+            $document = ($this->createDocumentHandler)($command);
+
+            return $this->json($document->toArray(), Response::HTTP_CREATED);
+        } catch (SessionNotFoundException|DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -70,27 +135,42 @@ class McpController extends AbstractController
     {
         try {
             $data = $request->toArray();
+            $dto = UpdateDocumentRequest::fromArray($data);
             $agentId = $request->headers->get('X-Agent-Id');
 
-            $document = $this->mcpService->updateDocument($documentId, $data, $agentId);
+            $command = new UpdateDocumentCommand(
+                documentId: $documentId,
+                title: $dto->title,
+                content: $dto->content,
+                metadata: $dto->metadata,
+                parentId: $dto->parentId,
+                sortOrder: $dto->sortOrder,
+                changeDescription: $dto->changeDescription,
+                authorParticipantId: $agentId,
+            );
 
-            return $this->json($document);
-        } catch (\InvalidArgumentException $e) {
+            $document = ($this->updateDocumentHandler)($command);
+
+            return $this->json($document->toArray());
+        } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
     #[Route('/documents/{documentId}', name: 'delete_document', methods: ['DELETE'])]
-    public function deleteDocument(string $documentId, Request $request): JsonResponse
+    public function deleteDocument(string $documentId): JsonResponse
     {
         try {
-            $agentId = $request->headers->get('X-Agent-Id');
-
-            $this->mcpService->deleteDocument($documentId, $agentId);
+            $command = new DeleteDocumentCommand(documentId: $documentId);
+            ($this->deleteDocumentHandler)($command);
 
             return $this->json(null, Response::HTTP_NO_CONTENT);
-        } catch (\InvalidArgumentException $e) {
+        } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -105,11 +185,22 @@ class McpController extends AbstractController
                 'author_id' => $request->query->get('author_id'),
             ]);
 
-            $annotations = $this->mcpService->readAnnotations($documentId, $filters);
+            $query = new ListAnnotationsQuery(
+                sessionId: '',
+                documentId: $documentId,
+                filters: $filters,
+                includeReplies: true,
+            );
 
-            return $this->json(['annotations' => $annotations]);
-        } catch (\InvalidArgumentException $e) {
+            $annotations = ($this->listAnnotationsHandler)($query);
+
+            return $this->json([
+                'annotations' => array_map(fn($a) => $a->toArray(), $annotations),
+            ]);
+        } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -123,11 +214,22 @@ class McpController extends AbstractController
                 'untreated_only' => $request->query->getBoolean('untreated_only', false) ?: null,
             ]);
 
-            $annotations = $this->mcpService->getSessionAnnotations($sessionId, $filters);
+            $query = new ListAnnotationsQuery(
+                sessionId: $sessionId,
+                documentId: null,
+                filters: $filters,
+                includeReplies: true,
+            );
 
-            return $this->json(['annotations' => $annotations]);
-        } catch (\InvalidArgumentException $e) {
+            $annotations = ($this->listAnnotationsHandler)($query);
+
+            return $this->json([
+                'annotations' => array_map(fn($a) => $a->toArray(), $annotations),
+            ]);
+        } catch (SessionNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
@@ -135,24 +237,17 @@ class McpController extends AbstractController
     public function getSessionStatus(string $sessionId): JsonResponse
     {
         try {
-            $status = $this->mcpService->getSessionStatus($sessionId);
+            $query = new GetSessionStatusQuery(sessionId: $sessionId);
+            $status = ($this->getSessionStatusHandler)($query);
 
-            return $this->json($status);
-        } catch (\InvalidArgumentException $e) {
+            return $this->json($status->toArray());
+        } catch (SessionNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
-    /**
-     * Met à jour le statut d'une session.
-     *
-     * L'agent DOIT mettre à jour le statut de la session selon son cycle de vie:
-     * - 'preparation' -> 'en_cours': Quand le travail collaboratif commence réellement
-     * - 'en_cours' -> 'termine': Quand toutes les annotations sont traitées et les décisions prises
-     * - 'termine' -> 'archive': Pour archiver une session terminée
-     *
-     * Body JSON: {"status": "en_cours"}
-     */
     #[Route('/sessions/{sessionId}/status', name: 'update_session_status', methods: ['PATCH'])]
     public function updateSessionStatus(string $sessionId, Request $request): JsonResponse
     {
@@ -167,9 +262,19 @@ class McpController extends AbstractController
                 ], Response::HTTP_BAD_REQUEST);
             }
 
-            $session = $this->mcpService->updateSessionStatus($sessionId, $data['status']);
+            $dto = UpdateSessionStatusRequest::fromArray($data);
+            $command = new UpdateSessionStatusCommand(
+                sessionId: $sessionId,
+                newStatus: $dto->toSessionStatus(),
+            );
 
-            return $this->json($session);
+            $session = ($this->updateSessionStatusHandler)($command);
+
+            return $this->json($session->toArray());
+        } catch (SessionNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (InvalidSessionStatusTransitionException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
@@ -186,25 +291,45 @@ class McpController extends AbstractController
                 return $this->json(['error' => 'Le contenu est requis'], Response::HTTP_BAD_REQUEST);
             }
 
-            $reply = $this->mcpService->respondToAnnotation($annotationId, $data['content'], $agentId);
+            if (empty($agentId)) {
+                return $this->json(['error' => 'X-Agent-Id header est requis'], Response::HTTP_BAD_REQUEST);
+            }
 
-            return $this->json($reply, Response::HTTP_CREATED);
-        } catch (\InvalidArgumentException $e) {
+            $command = new RespondAnnotationCommand(
+                annotationId: $annotationId,
+                authorParticipantId: $agentId,
+                content: $data['content'],
+                markAsResolved: $data['mark_as_resolved'] ?? false,
+            );
+
+            $reply = ($this->respondAnnotationHandler)($command);
+
+            return $this->json($reply->toArray(), Response::HTTP_CREATED);
+        } catch (AnnotationNotFoundException|ParticipantNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (CannotReplyToReplyException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 
     #[Route('/annotations/{annotationId}/acknowledge', name: 'acknowledge_annotation', methods: ['POST'])]
-    public function acknowledgeAnnotation(string $annotationId, Request $request): JsonResponse
+    public function acknowledgeAnnotation(string $annotationId): JsonResponse
     {
         try {
-            $agentId = $request->headers->get('X-Agent-Id');
+            $command = new AcknowledgeAnnotationCommand(
+                annotationId: $annotationId,
+                acknowledged: true,
+            );
 
-            $annotation = $this->mcpService->acknowledgeAnnotation($annotationId, $agentId);
+            $annotation = ($this->acknowledgeAnnotationHandler)($command);
 
-            return $this->json($annotation);
-        } catch (\InvalidArgumentException $e) {
+            return $this->json($annotation->toArray());
+        } catch (AnnotationNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
     }
 }

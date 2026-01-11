@@ -17,6 +17,9 @@ use Symfony\Component\Uid\Uuid;
 class Annotation
 {
     public const TYPE_COMMENT = 'comment';
+    public const TYPE_QUESTION = 'question';
+    public const TYPE_OBJECTION = 'objection';
+    public const TYPE_SUGGESTION = 'suggestion';
 
     public const STATUS_OPEN = 'open';
     public const STATUS_IN_PROGRESS = 'in_progress';
@@ -24,6 +27,9 @@ class Annotation
 
     public const TYPES = [
         self::TYPE_COMMENT,
+        self::TYPE_QUESTION,
+        self::TYPE_OBJECTION,
+        self::TYPE_SUGGESTION,
     ];
 
     public const STATUSES = [

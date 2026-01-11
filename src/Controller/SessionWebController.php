@@ -2,15 +2,28 @@
 
 namespace App\Controller;
 
+use App\Application\Command\Annotation\CreateAnnotationCommand;
+use App\Application\Command\Annotation\CreateAnnotationHandler;
+use App\Application\Command\Decision\ValidateDecisionCommand;
+use App\Application\Command\Decision\ValidateDecisionHandler;
+use App\Application\Command\Decision\VoteCommand;
+use App\Application\Command\Decision\VoteHandler;
+use App\Application\Command\Document\CreateDocumentCommand;
+use App\Application\Command\Document\CreateDocumentHandler;
+use App\Application\Command\Document\UpdateDocumentCommand;
+use App\Application\Command\Document\UpdateDocumentHandler;
+use App\Application\Command\Session\CreateSessionCommand;
+use App\Application\Command\Session\CreateSessionHandler;
+use App\Application\Command\Session\JoinSessionCommand;
+use App\Application\Command\Session\JoinSessionHandler;
+use App\Domain\Session\Exception\SessionArchivedException;
+use App\Domain\Session\Exception\SessionNotFoundException;
 use App\Entity\Session;
 use App\Repository\AnnotationRepository;
 use App\Repository\DecisionRepository;
 use App\Repository\DocumentRepository;
 use App\Repository\ParticipantRepository;
 use App\Repository\SessionRepository;
-use App\Service\Annotation\AnnotationService;
-use App\Service\Decision\DecisionService;
-use App\Service\Document\DocumentService;
 use App\Service\Export\ExportService;
 use App\Service\Session\SessionService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -23,15 +36,19 @@ use Symfony\Component\Uid\Uuid;
 class SessionWebController extends AbstractController
 {
     public function __construct(
+        private readonly CreateSessionHandler $createSessionHandler,
+        private readonly JoinSessionHandler $joinSessionHandler,
+        private readonly CreateDocumentHandler $createDocumentHandler,
+        private readonly UpdateDocumentHandler $updateDocumentHandler,
+        private readonly CreateAnnotationHandler $createAnnotationHandler,
+        private readonly VoteHandler $voteHandler,
+        private readonly ValidateDecisionHandler $validateDecisionHandler,
         private readonly SessionService $sessionService,
         private readonly SessionRepository $sessionRepository,
         private readonly DocumentRepository $documentRepository,
         private readonly ParticipantRepository $participantRepository,
         private readonly AnnotationRepository $annotationRepository,
         private readonly DecisionRepository $decisionRepository,
-        private readonly DocumentService $documentService,
-        private readonly AnnotationService $annotationService,
-        private readonly DecisionService $decisionService,
         private readonly ExportService $exportService,
     ) {}
 
@@ -56,13 +73,21 @@ class SessionWebController extends AbstractController
             return $this->redirectToRoute('home');
         }
 
-        $session = $this->sessionService->create($title);
-        $participant = $this->sessionService->joinSession($session, $pseudo);
+        $command = new CreateSessionCommand(
+            title: $title,
+            description: null,
+            creatorPseudo: $pseudo,
+            isAgent: false,
+        );
 
-        $httpSession->set('participant_id', $participant->getId()->toString());
-        $httpSession->set('session_id', $session->getId()->toString());
+        $result = ($this->createSessionHandler)($command);
+        $session = $result['session'];
+        $participant = $result['participant'];
 
-        return $this->redirectToRoute('session_view', ['id' => $session->getId()->toString()]);
+        $httpSession->set('participant_id', $participant->id);
+        $httpSession->set('session_id', $session->id);
+
+        return $this->redirectToRoute('session_view', ['id' => $session->id]);
     }
 
     #[Route('/session/join', name: 'session_join', methods: ['POST'])]
@@ -76,24 +101,29 @@ class SessionWebController extends AbstractController
             return $this->redirectToRoute('home');
         }
 
-        $session = $this->sessionRepository->findByInviteCode($inviteCode);
+        try {
+            $command = new JoinSessionCommand(
+                inviteCode: $inviteCode,
+                pseudo: $pseudo,
+                color: null,
+                isAgent: false,
+            );
 
-        if ($session === null) {
+            $result = ($this->joinSessionHandler)($command);
+            $session = $result['session'];
+            $participant = $result['participant'];
+
+            $httpSession->set('participant_id', $participant->id);
+            $httpSession->set('session_id', $session->id);
+
+            return $this->redirectToRoute('session_view', ['id' => $session->id]);
+        } catch (SessionNotFoundException $e) {
             $this->addFlash('error', 'Code d\'invitation invalide');
             return $this->redirectToRoute('home');
-        }
-
-        if ($session->getStatus() === Session::STATUS_ARCHIVE) {
+        } catch (SessionArchivedException $e) {
             $this->addFlash('error', 'Cette session est archivée');
             return $this->redirectToRoute('home');
         }
-
-        $participant = $this->sessionService->joinSession($session, $pseudo);
-
-        $httpSession->set('participant_id', $participant->getId()->toString());
-        $httpSession->set('session_id', $session->getId()->toString());
-
-        return $this->redirectToRoute('session_view', ['id' => $session->getId()->toString()]);
     }
 
     #[Route('/session/{id}', name: 'session_view')]
@@ -141,18 +171,22 @@ class SessionWebController extends AbstractController
         $participant = $participantOrRedirect;
 
         if ($request->isMethod('POST')) {
-            $data = [
-                'title' => $request->request->get('title'),
-                'content' => $request->request->get('content', ''),
-                'type' => $request->request->get('type', 'general'),
-                'parent_id' => $request->request->get('parent_id') ?: null,
-            ];
+            $command = new CreateDocumentCommand(
+                sessionId: $id,
+                title: $request->request->get('title'),
+                type: $request->request->get('type', 'general'),
+                content: $request->request->get('content', ''),
+                metadata: null,
+                parentId: $request->request->get('parent_id') ?: null,
+                sortOrder: 0,
+                authorParticipantId: $participant->getId()->toString(),
+            );
 
-            $document = $this->documentService->create($session, $data, $participant);
+            $document = ($this->createDocumentHandler)($command);
 
             return $this->redirectToRoute('session_document_view', [
                 'id' => $id,
-                'slug' => $document->getSlug(),
+                'slug' => $document->slug,
             ]);
         }
 
@@ -232,17 +266,22 @@ class SessionWebController extends AbstractController
         }
 
         if ($request->isMethod('POST')) {
-            $data = array_filter([
-                'title' => $request->request->get('title'),
-                'content' => $request->request->get('content'),
-                'type' => $request->request->get('type'),
-            ]);
+            $command = new UpdateDocumentCommand(
+                documentId: $document->getId()->toString(),
+                title: $request->request->get('title'),
+                content: $request->request->get('content'),
+                metadata: null,
+                parentId: null,
+                sortOrder: null,
+                changeDescription: null,
+                authorParticipantId: $participant->getId()->toString(),
+            );
 
-            $document = $this->documentService->update($document, $data, $participant);
+            $updatedDocument = ($this->updateDocumentHandler)($command);
 
             return $this->redirectToRoute('session_document_view', [
                 'id' => $id,
-                'slug' => $document->getSlug(),
+                'slug' => $updatedDocument->slug,
             ]);
         }
 
@@ -281,13 +320,19 @@ class SessionWebController extends AbstractController
             return new Response('Document non trouvé', Response::HTTP_NOT_FOUND);
         }
 
-        $annotation = $this->annotationService->create(
-            $document,
-            $participant,
-            $content,
-            $type,
-            null
+        $command = new CreateAnnotationCommand(
+            documentId: $documentId,
+            authorParticipantId: $participant->getId()->toString(),
+            content: $content,
+            type: $type,
+            anchor: null,
         );
+
+        ($this->createAnnotationHandler)($command);
+
+        // Refresh annotation from repository for Twig template
+        $annotations = $this->annotationRepository->findByDocumentWithFilters($document);
+        $annotation = end($annotations); // Get the last one (just created)
 
         return $this->render('annotation/_item.html.twig', [
             'annotation' => $annotation,
@@ -422,8 +467,14 @@ class SessionWebController extends AbstractController
             throw $this->createNotFoundException('Option requise');
         }
 
-        // Use the DecisionService for voting
-        $this->decisionService->vote($decision, $participant, $optionId);
+        $command = new VoteCommand(
+            decisionId: $decisionId,
+            participantId: $participant->getId()->toString(),
+            optionId: $optionId,
+            comment: null,
+        );
+
+        ($this->voteHandler)($command);
 
         // Refresh the decision entity
         $decision = $this->decisionRepository->find(Uuid::fromString($decisionId));
@@ -455,8 +506,12 @@ class SessionWebController extends AbstractController
             throw $this->createNotFoundException('Option requise');
         }
 
-        // Use the DecisionService for validation
-        $this->decisionService->validate($decision, $optionId);
+        $command = new ValidateDecisionCommand(
+            decisionId: $decisionId,
+            selectedOptionId: $optionId,
+        );
+
+        ($this->validateDecisionHandler)($command);
 
         // Refresh the decision entity
         $decision = $this->decisionRepository->find(Uuid::fromString($decisionId));

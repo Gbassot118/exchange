@@ -84,7 +84,7 @@ class SessionService
     {
         $threshold = new \DateTimeImmutable('-30 seconds');
         return $this->participantRepository->findOnlineInSession(
-            $session->getId()->toString(),
+            $session,
             $threshold
         );
     }

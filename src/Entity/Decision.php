@@ -144,6 +144,16 @@ class Decision
         return $this;
     }
 
+    public function hasOption(string $optionId): bool
+    {
+        foreach ($this->options as $option) {
+            if ($option['id'] === $optionId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function getSession(): Session
     {
         return $this->session;

@@ -2,7 +2,24 @@
 
 namespace App\Controller\Api;
 
-use App\Entity\Session;
+use App\Application\Command\Session\CreateSessionCommand;
+use App\Application\Command\Session\CreateSessionHandler;
+use App\Application\Command\Session\JoinSessionCommand;
+use App\Application\Command\Session\JoinSessionHandler;
+use App\Application\Command\Session\UpdateSessionStatusCommand;
+use App\Application\Command\Session\UpdateSessionStatusHandler;
+use App\Application\DTO\Request\CreateSessionRequest;
+use App\Application\DTO\Request\JoinSessionRequest;
+use App\Application\DTO\Request\UpdateSessionStatusRequest;
+use App\Application\Query\Session\GetSessionQuery;
+use App\Application\Query\Session\GetSessionHandler;
+use App\Application\Query\Session\ListSessionsQuery;
+use App\Application\Query\Session\ListSessionsHandler;
+use App\Domain\Session\Exception\InvalidSessionStatusTransitionException;
+use App\Domain\Session\Exception\SessionArchivedException;
+use App\Domain\Session\Exception\SessionNotFoundException;
+use App\Domain\Session\ValueObject\SessionStatus;
+use App\Repository\ParticipantRepository;
 use App\Repository\SessionRepository;
 use App\Service\Session\SessionService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -16,31 +33,45 @@ use Symfony\Component\Uid\Uuid;
 class SessionController extends AbstractController
 {
     public function __construct(
+        private readonly CreateSessionHandler $createSessionHandler,
+        private readonly JoinSessionHandler $joinSessionHandler,
+        private readonly UpdateSessionStatusHandler $updateStatusHandler,
+        private readonly GetSessionHandler $getSessionHandler,
+        private readonly ListSessionsHandler $listSessionsHandler,
         private readonly SessionService $sessionService,
         private readonly SessionRepository $sessionRepository,
+        private readonly ParticipantRepository $participantRepository,
     ) {}
 
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
         $data = $request->toArray();
+        $dto = CreateSessionRequest::fromArray($data);
 
-        if (empty($data['title'])) {
+        if (empty($dto->title)) {
             return $this->json(['error' => 'Le titre est requis'], Response::HTTP_BAD_REQUEST);
         }
 
-        $session = $this->sessionService->create(
-            $data['title'],
-            $data['description'] ?? null
+        if (empty($dto->creatorPseudo)) {
+            return $this->json(['error' => 'Le pseudo du créateur est requis'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $command = new CreateSessionCommand(
+            title: $dto->title,
+            description: $dto->description,
+            creatorPseudo: $dto->creatorPseudo,
+            isAgent: $dto->isAgent,
         );
 
-        return $this->json($this->serializeSession($session), Response::HTTP_CREATED);
+        $result = ($this->createSessionHandler)($command);
+
+        return $this->json([
+            'session' => $result['session']->toArray(),
+            'participant' => $result['participant']->toArray(),
+        ], Response::HTTP_CREATED);
     }
 
-    /**
-     * Create a new session and automatically join as an AI agent.
-     * This is the recommended endpoint for Claude or other AI agents.
-     */
     #[Route('/agent/create', name: 'agent_create', methods: ['POST'])]
     public function agentCreate(Request $request): JsonResponse
     {
@@ -52,36 +83,41 @@ class SessionController extends AbstractController
 
         $agentName = $data['agent_name'] ?? 'Claude Assistant';
 
-        $session = $this->sessionService->create(
-            $data['title'],
-            $data['description'] ?? null
+        $command = new CreateSessionCommand(
+            title: $data['title'],
+            description: $data['description'] ?? null,
+            creatorPseudo: $agentName,
+            isAgent: true,
         );
 
-        $participant = $this->sessionService->joinSession($session, $agentName, true);
+        $result = ($this->createSessionHandler)($command);
+        $session = $result['session'];
+        $participant = $result['participant'];
 
         return $this->json([
-            'session' => $this->serializeSession($session),
+            'session' => $session->toArray(),
             'agent' => [
-                'participant_id' => $participant->getId()->toString(),
-                'pseudo' => $participant->getPseudo(),
-                'color' => $participant->getColor(),
+                'participant_id' => $participant->id,
+                'pseudo' => $participant->pseudo,
+                'color' => $participant->color,
             ],
             'endpoints' => [
-                'documents' => '/api/mcp/sessions/' . $session->getId()->toString() . '/documents',
-                'status' => '/api/mcp/sessions/' . $session->getId()->toString() . '/status',
-                'heartbeat' => '/api/sessions/' . $session->getId()->toString() . '/heartbeat',
+                'documents' => '/api/mcp/sessions/' . $session->id . '/documents',
+                'status' => '/api/mcp/sessions/' . $session->id . '/status',
+                'heartbeat' => '/api/sessions/' . $session->id . '/heartbeat',
             ],
-            'invite_url' => '/session/join?code=' . $session->getInviteCode(),
+            'invite_url' => '/session/join?code=' . $session->inviteCode,
         ], Response::HTTP_CREATED);
     }
 
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(): JsonResponse
     {
-        $sessions = $this->sessionRepository->findBy([], ['createdAt' => 'DESC'], 50);
+        $query = new ListSessionsQuery(activeOnly: false, limit: 50);
+        $sessions = ($this->listSessionsHandler)($query);
 
         return $this->json([
-            'sessions' => array_map(fn($s) => $this->serializeSession($s, true), $sessions),
+            'sessions' => array_map(fn($s) => $s->toArray(), $sessions),
         ]);
     }
 
@@ -89,13 +125,12 @@ class SessionController extends AbstractController
     public function show(string $id): JsonResponse
     {
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($id));
+            $query = new GetSessionQuery(sessionId: $id, includeParticipants: true);
+            $session = ($this->getSessionHandler)($query);
 
-            if ($session === null) {
-                return $this->json(['error' => 'Session non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
-            return $this->json($this->serializeSession($session, true));
+            return $this->json($session->toArray());
+        } catch (SessionNotFoundException $e) {
+            return $this->json(['error' => 'Session non trouvée'], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => 'ID de session invalide'], Response::HTTP_BAD_REQUEST);
         }
@@ -105,33 +140,31 @@ class SessionController extends AbstractController
     public function join(string $inviteCode, Request $request): JsonResponse
     {
         $data = $request->toArray();
+        $dto = JoinSessionRequest::fromArray($data);
 
-        if (empty($data['pseudo'])) {
+        if (empty($dto->pseudo)) {
             return $this->json(['error' => 'Le pseudo est requis'], Response::HTTP_BAD_REQUEST);
         }
 
-        $session = $this->sessionService->findByInviteCode($inviteCode);
+        try {
+            $command = new JoinSessionCommand(
+                inviteCode: $inviteCode,
+                pseudo: $dto->pseudo,
+                color: $dto->color,
+                isAgent: $dto->isAgent,
+            );
 
-        if ($session === null) {
+            $result = ($this->joinSessionHandler)($command);
+
+            return $this->json([
+                'session' => $result['session']->toArray(),
+                'participant' => $result['participant']->toArray(),
+            ]);
+        } catch (SessionNotFoundException $e) {
             return $this->json(['error' => 'Code d\'invitation invalide'], Response::HTTP_NOT_FOUND);
-        }
-
-        if ($session->getStatus() === Session::STATUS_ARCHIVE) {
+        } catch (SessionArchivedException $e) {
             return $this->json(['error' => 'Cette session est archivée'], Response::HTTP_GONE);
         }
-
-        $isAgent = $data['is_agent'] ?? false;
-        $participant = $this->sessionService->joinSession($session, $data['pseudo'], $isAgent);
-
-        return $this->json([
-            'session' => $this->serializeSession($session),
-            'participant' => [
-                'id' => $participant->getId()->toString(),
-                'pseudo' => $participant->getPseudo(),
-                'color' => $participant->getColor(),
-                'is_agent' => $participant->isAgent(),
-            ],
-        ]);
     }
 
     #[Route('/{id}/participants', name: 'participants', methods: ['GET'])]
@@ -164,26 +197,21 @@ class SessionController extends AbstractController
     public function updateStatus(string $id, Request $request): JsonResponse
     {
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($id));
-
-            if ($session === null) {
-                return $this->json(['error' => 'Session non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
             $data = $request->toArray();
+            $dto = UpdateSessionStatusRequest::fromArray($data);
 
-            if (empty($data['status']) || !in_array($data['status'], [
-                Session::STATUS_PREPARATION,
-                Session::STATUS_EN_COURS,
-                Session::STATUS_TERMINE,
-                Session::STATUS_ARCHIVE,
-            ])) {
-                return $this->json(['error' => 'Statut invalide'], Response::HTTP_BAD_REQUEST);
-            }
+            $command = new UpdateSessionStatusCommand(
+                sessionId: $id,
+                newStatus: $dto->toSessionStatus(),
+            );
 
-            $session = $this->sessionService->updateStatus($session, $data['status']);
+            $session = ($this->updateStatusHandler)($command);
 
-            return $this->json($this->serializeSession($session));
+            return $this->json($session->toArray());
+        } catch (SessionNotFoundException $e) {
+            return $this->json(['error' => 'Session non trouvée'], Response::HTTP_NOT_FOUND);
+        } catch (InvalidSessionStatusTransitionException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => 'ID de session invalide'], Response::HTTP_BAD_REQUEST);
         }
@@ -225,26 +253,5 @@ class SessionController extends AbstractController
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
-    }
-
-    private function serializeSession(Session $session, bool $includeStats = false): array
-    {
-        $data = [
-            'id' => $session->getId()->toString(),
-            'title' => $session->getTitle(),
-            'description' => $session->getDescription(),
-            'status' => $session->getStatus(),
-            'invite_code' => $session->getInviteCode(),
-            'created_at' => $session->getCreatedAt()->format(\DateTimeInterface::ATOM),
-            'updated_at' => $session->getUpdatedAt()->format(\DateTimeInterface::ATOM),
-        ];
-
-        if ($includeStats) {
-            $data['document_count'] = $session->getDocuments()->count();
-            $data['participant_count'] = $session->getParticipants()->count();
-            $data['decision_count'] = $session->getDecisions()->count();
-        }
-
-        return $data;
     }
 }

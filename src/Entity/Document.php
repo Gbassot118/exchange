@@ -283,4 +283,43 @@ class Document
         }
         return $breadcrumbs;
     }
+
+    /**
+     * Update the document content and create a new version.
+     *
+     * @param array<string, mixed>|null $metadata
+     */
+    public function updateContent(
+        string $content,
+        ?array $metadata = null,
+        ?Participant $author = null,
+        ?string $changeDescription = null,
+    ): static {
+        $previousContent = $this->content;
+        $this->content = $content;
+
+        if ($metadata !== null) {
+            $this->metadata = $metadata;
+        }
+
+        // Only create a version if content actually changed
+        if ($previousContent !== $content) {
+            $version = new DocumentVersion();
+            $version->setDocument($this);
+            $version->setVersion($this->currentVersion);
+            $version->setContent($previousContent);
+            if ($author !== null) {
+                $version->setAuthor($author);
+            }
+            if ($changeDescription !== null) {
+                $version->setChangeDescription($changeDescription);
+            }
+            $this->versions->add($version);
+            $this->incrementVersion();
+        }
+
+        $this->updatedAt = new \DateTimeImmutable();
+
+        return $this;
+    }
 }

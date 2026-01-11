@@ -1,10 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\AI\Tool;
 
-use App\Repository\SessionRepository;
+use App\Application\DTO\Response\SessionResponse;
+use App\Application\Query\Session\GetSessionQuery;
 use Symfony\AI\Attribute\AsTool;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 #[AsTool(
     name: 'session_invite',
@@ -25,18 +30,28 @@ use Symfony\Component\Uid\Uuid;
 class SessionInviteTool
 {
     public function __construct(
-        private readonly SessionRepository $sessionRepository,
+        private readonly MessageBusInterface $messageBus,
     ) {}
 
     public function __invoke(string $session_id, ?string $base_url = null): array
     {
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($session_id));
-            if ($session === null) {
-                return ['error' => 'Session not found'];
+            $query = new GetSessionQuery(
+                sessionId: $session_id,
+                includeParticipants: false,
+            );
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
             }
 
-            $inviteCode = $session->getInviteCode();
+            /** @var SessionResponse $session */
+            $session = $handledStamp->getResult();
+
+            $inviteCode = $session->inviteCode;
             $relativePath = '/?code=' . $inviteCode;
 
             $inviteUrl = $base_url
@@ -45,20 +60,22 @@ class SessionInviteTool
 
             return [
                 'session' => [
-                    'id' => $session->getId()->toString(),
-                    'title' => $session->getTitle(),
-                    'status' => $session->getStatus(),
+                    'id' => $session->id,
+                    'title' => $session->title,
+                    'status' => $session->status,
                 ],
                 'invite_code' => $inviteCode,
                 'invite_url' => $inviteUrl,
                 'message' => sprintf(
                     'Share this link to invite participants to the session "%s": %s',
-                    $session->getTitle(),
+                    $session->title,
                     $inviteUrl
                 ),
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid session_id format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
     }
 }

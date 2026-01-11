@@ -1,14 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\AI\Tool;
 
-use App\Repository\AnnotationRepository;
-use App\Repository\DecisionRepository;
-use App\Repository\DocumentRepository;
-use App\Repository\SessionRepository;
-use App\Service\Session\SessionService;
+use App\Application\DTO\Response\SessionStatusResponse;
+use App\Application\Query\Session\GetSessionStatusQuery;
 use Symfony\AI\Attribute\AsTool;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 #[AsTool(
     name: 'session_status',
@@ -24,133 +25,87 @@ use Symfony\Component\Uid\Uuid;
 class SessionStatusTool
 {
     public function __construct(
-        private readonly SessionService $sessionService,
-        private readonly SessionRepository $sessionRepository,
-        private readonly DocumentRepository $documentRepository,
-        private readonly AnnotationRepository $annotationRepository,
-        private readonly DecisionRepository $decisionRepository,
+        private readonly MessageBusInterface $messageBus,
     ) {}
 
     public function __invoke(string $session_id): array
     {
         try {
-            $session = $this->sessionRepository->find(Uuid::fromString($session_id));
-            if ($session === null) {
-                return ['error' => 'Session not found'];
+            $query = new GetSessionStatusQuery(sessionId: $session_id);
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
             }
 
-            $documents = $this->documentRepository->findBySession($session, null, null);
-            $onlineParticipants = $this->sessionService->getOnlineParticipants($session);
-            $decisions = $this->decisionRepository->findBySession($session);
+            /** @var SessionStatusResponse $statusResponse */
+            $statusResponse = $handledStamp->getResult();
 
-            // Count annotations by type and status
-            $allAnnotations = $this->annotationRepository->findBySessionWithFilters($session, []);
-            $annotationStats = [
-                'total' => count($allAnnotations),
-                'by_type' => [],
-                'by_status' => [],
-                'unresolved' => 0,
-            ];
-
-            foreach ($allAnnotations as $annotation) {
-                $type = $annotation->getType();
-                $status = $annotation->getStatus();
-
-                $annotationStats['by_type'][$type] = ($annotationStats['by_type'][$type] ?? 0) + 1;
-                $annotationStats['by_status'][$status] = ($annotationStats['by_status'][$status] ?? 0) + 1;
-
-                if ($status === 'open') {
-                    $annotationStats['unresolved']++;
-                }
-            }
-
-            // Count decisions by status
-            $decisionStats = [
-                'total' => count($decisions),
-                'by_status' => [],
-                'pending_votes' => 0,
-            ];
-
-            foreach ($decisions as $decision) {
-                $status = $decision->getStatus();
-                $decisionStats['by_status'][$status] = ($decisionStats['by_status'][$status] ?? 0) + 1;
-
-                if ($status === 'open') {
-                    $decisionStats['pending_votes']++;
-                }
-            }
-
-            // Prioritized items for the AI to focus on
-            $prioritizedItems = [];
-
-            // Add unresolved questions first
-            $unresolvedQuestions = array_filter(
-                $allAnnotations,
-                fn($a) => $a->getType() === 'question' && $a->getStatus() === 'open'
-            );
-            foreach (array_slice($unresolvedQuestions, 0, 5) as $question) {
-                $prioritizedItems[] = [
-                    'type' => 'question',
-                    'id' => $question->getId()->toString(),
-                    'content' => $question->getContent(),
-                    'author' => $question->getAuthor()->getPseudo(),
-                    'document' => $question->getDocument()->getTitle(),
-                ];
-            }
-
-            // Add unresolved objections
-            $unresolvedObjections = array_filter(
-                $allAnnotations,
-                fn($a) => $a->getType() === 'objection' && $a->getStatus() === 'open'
-            );
-            foreach (array_slice($unresolvedObjections, 0, 5) as $objection) {
-                $prioritizedItems[] = [
-                    'type' => 'objection',
-                    'id' => $objection->getId()->toString(),
-                    'content' => $objection->getContent(),
-                    'author' => $objection->getAuthor()->getPseudo(),
-                    'document' => $objection->getDocument()->getTitle(),
-                ];
-            }
-
-            return [
-                'session' => [
-                    'id' => $session->getId()->toString(),
-                    'title' => $session->getTitle(),
-                    'description' => $session->getDescription(),
-                    'status' => $session->getStatus(),
-                    'created_at' => $session->getCreatedAt()->format('c'),
-                ],
-                'statistics' => [
-                    'documents' => [
-                        'total' => count($documents),
-                    ],
-                    'annotations' => $annotationStats,
-                    'decisions' => $decisionStats,
-                    'participants' => [
-                        'online' => count($onlineParticipants),
-                        'list' => array_map(fn($p) => [
-                            'id' => $p->getId()->toString(),
-                            'pseudo' => $p->getPseudo(),
-                            'is_agent' => $p->isAgent(),
-                            'current_document' => $p->getCurrentDocumentId(),
-                        ], $onlineParticipants),
-                    ],
-                ],
-                'prioritized_items' => $prioritizedItems,
-                'summary' => sprintf(
-                    'Session "%s" has %d documents, %d annotations (%d unresolved), %d decisions (%d pending). %d participants online.',
-                    $session->getTitle(),
-                    count($documents),
-                    $annotationStats['total'],
-                    $annotationStats['unresolved'],
-                    $decisionStats['total'],
-                    $decisionStats['pending_votes'],
-                    count($onlineParticipants)
-                ),
-            ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid session_id format'];
+            return $this->formatResponse($statusResponse);
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
+    }
+
+    private function formatResponse(SessionStatusResponse $response): array
+    {
+        $sessionData = $response->session->toArray();
+        $stats = $response->statistics;
+
+        // Build prioritized items from priority annotations
+        $prioritizedItems = [];
+        foreach ($response->priorityAnnotations as $annotation) {
+            $annotationData = $annotation->toArray();
+            $prioritizedItems[] = [
+                'type' => $annotationData['type'],
+                'id' => $annotationData['id'],
+                'content' => $annotationData['content'],
+                'author' => $annotationData['author'],
+                'document_id' => $annotationData['document_id'],
+            ];
+        }
+
+        return [
+            'session' => [
+                'id' => $sessionData['id'],
+                'title' => $sessionData['title'],
+                'description' => $sessionData['description'] ?? null,
+                'status' => $sessionData['status'],
+                'created_at' => $sessionData['created_at'],
+            ],
+            'statistics' => [
+                'documents' => [
+                    'total' => $stats->totalDocuments,
+                ],
+                'annotations' => [
+                    'total' => $stats->openAnnotations + $stats->untreatedAnnotations,
+                    'unresolved' => $stats->openAnnotations,
+                    'untreated' => $stats->untreatedAnnotations,
+                ],
+                'decisions' => [
+                    'pending_votes' => $stats->pendingDecisions,
+                ],
+                'participants' => [
+                    'online' => $stats->onlineParticipants,
+                ],
+            ],
+            'prioritized_items' => $prioritizedItems,
+            'pending_decisions' => array_map(
+                fn($d) => $d->toArray(),
+                $response->decisions
+            ),
+            'summary' => sprintf(
+                'Session "%s" has %d documents, %d unresolved annotations, %d pending decisions. %d participants online.',
+                $sessionData['title'],
+                $stats->totalDocuments,
+                $stats->openAnnotations,
+                $stats->pendingDecisions,
+                $stats->onlineParticipants
+            ),
+        ];
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Repository;
 
+use App\Domain\Session\Repository\ParticipantRepositoryInterface;
+use App\Domain\Session\ValueObject\ParticipantId;
 use App\Entity\Participant;
 use App\Entity\Session;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -11,14 +13,14 @@ use Symfony\Component\Uid\Uuid;
 /**
  * @extends ServiceEntityRepository<Participant>
  */
-class ParticipantRepository extends ServiceEntityRepository
+class ParticipantRepository extends ServiceEntityRepository implements ParticipantRepositoryInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, Participant::class);
     }
 
-    public function save(Participant $entity, bool $flush = false): void
+    public function save(Participant $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
 
@@ -27,13 +29,18 @@ class ParticipantRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Participant $entity, bool $flush = false): void
+    public function remove(Participant $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
 
         if ($flush) {
             $this->getEntityManager()->flush();
         }
+    }
+
+    public function findById(ParticipantId $id): ?Participant
+    {
+        return $this->find($id->value());
     }
 
     public function findBySessionAndPseudo(Session $session, string $pseudo): ?Participant
@@ -47,13 +54,12 @@ class ParticipantRepository extends ServiceEntityRepository
     /**
      * @return Participant[]
      */
-    public function findOnlineInSession(string $sessionId, \DateTimeImmutable $threshold): array
+    public function findOnlineInSession(Session $session, \DateTimeImmutable $threshold): array
     {
         return $this->createQueryBuilder('p')
-            ->join('p.session', 's')
-            ->where('s.id = :sessionId')
+            ->where('p.session = :session')
             ->andWhere('p.lastSeenAt >= :threshold')
-            ->setParameter('sessionId', Uuid::fromString($sessionId), 'uuid')
+            ->setParameter('session', $session)
             ->setParameter('threshold', $threshold)
             ->orderBy('p.pseudo', 'ASC')
             ->getQuery()

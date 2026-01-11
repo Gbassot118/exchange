@@ -391,7 +391,10 @@ class AnnotationTest extends TestCase
     public function testTypesArray(): void
     {
         $this->assertContains(Annotation::TYPE_COMMENT, Annotation::TYPES);
-        $this->assertCount(1, Annotation::TYPES);
+        $this->assertContains(Annotation::TYPE_QUESTION, Annotation::TYPES);
+        $this->assertContains(Annotation::TYPE_OBJECTION, Annotation::TYPES);
+        $this->assertContains(Annotation::TYPE_SUGGESTION, Annotation::TYPES);
+        $this->assertCount(4, Annotation::TYPES);
     }
 
     public function testSetAndGetParentAnnotation(): void

@@ -2,6 +2,8 @@
 
 namespace App\Repository;
 
+use App\Domain\Collaboration\Repository\AnnotationRepositoryInterface;
+use App\Domain\Collaboration\ValueObject\AnnotationId;
 use App\Entity\Annotation;
 use App\Entity\Document;
 use App\Entity\Session;
@@ -11,14 +13,14 @@ use Doctrine\Persistence\ManagerRegistry;
 /**
  * @extends ServiceEntityRepository<Annotation>
  */
-class AnnotationRepository extends ServiceEntityRepository
+class AnnotationRepository extends ServiceEntityRepository implements AnnotationRepositoryInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, Annotation::class);
     }
 
-    public function save(Annotation $entity, bool $flush = false): void
+    public function save(Annotation $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
 
@@ -27,13 +29,18 @@ class AnnotationRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Annotation $entity, bool $flush = false): void
+    public function remove(Annotation $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
 
         if ($flush) {
             $this->getEntityManager()->flush();
         }
+    }
+
+    public function findById(AnnotationId $id): ?Annotation
+    {
+        return $this->find($id->value());
     }
 
     /**
