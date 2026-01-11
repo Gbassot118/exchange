@@ -211,6 +211,17 @@
             border-top: 1px solid #e5e7eb;
             margin: 0.5rem 0;
         }
+
+        /* Resize handle styles */
+        #resize-handle {
+            touch-action: none;
+        }
+        #resize-handle:hover {
+            width: 4px;
+        }
+        #resize-handle:active {
+            background-color: #3b82f6;
+        }
     </style>
 
     {% block stylesheets %}{% endblock %}
