@@ -126,7 +126,7 @@ class AnnotationController extends AbstractController
     }
 
     #[Route('/{id}/resolve', name: 'resolve', methods: ['POST'])]
-    public function resolve(string $id, Request $request): JsonResponse
+    public function resolve(string $id, Request $request): Response
     {
         try {
             $annotation = $this->annotationRepository->find(Uuid::fromString($id));
@@ -135,7 +135,13 @@ class AnnotationController extends AbstractController
                 return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
             }
 
-            $data = $request->toArray();
+            // Support both JSON and form data
+            $contentType = $request->headers->get('Content-Type', '');
+            if (str_contains($contentType, 'application/json')) {
+                $data = $request->toArray();
+            } else {
+                $data = $request->request->all();
+            }
 
             if (empty($data['participant_id'])) {
                 return $this->json(['error' => 'participant_id est requis'], Response::HTTP_BAD_REQUEST);
@@ -148,6 +154,14 @@ class AnnotationController extends AbstractController
 
             $annotation = $this->annotationService->resolve($annotation, $participant);
 
+            // Return HTML for HTMX requests, JSON otherwise
+            if ($request->headers->has('HX-Request')) {
+                return $this->render('annotation/_item.html.twig', [
+                    'annotation' => $annotation,
+                    'participant' => $participant,
+                ]);
+            }
+
             return $this->json($this->annotationService->serialize($annotation));
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
@@ -155,7 +169,7 @@ class AnnotationController extends AbstractController
     }
 
     #[Route('/{id}/replies', name: 'reply', methods: ['POST'])]
-    public function reply(string $id, Request $request): JsonResponse
+    public function reply(string $id, Request $request): Response
     {
         try {
             $annotation = $this->annotationRepository->find(Uuid::fromString($id));
@@ -164,7 +178,13 @@ class AnnotationController extends AbstractController
                 return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
             }
 
-            $data = $request->toArray();
+            // Support both JSON and form data
+            $contentType = $request->headers->get('Content-Type', '');
+            if (str_contains($contentType, 'application/json')) {
+                $data = $request->toArray();
+            } else {
+                $data = $request->request->all();
+            }
 
             if (empty($data['participant_id'])) {
                 return $this->json(['error' => 'participant_id est requis'], Response::HTTP_BAD_REQUEST);
@@ -180,6 +200,16 @@ class AnnotationController extends AbstractController
             }
 
             $reply = $this->annotationService->createReply($annotation, $data['content'], $participant);
+
+            // Return HTML for HTMX requests, JSON otherwise
+            if ($request->headers->has('HX-Request')) {
+                // Refresh the parent annotation to include the new reply
+                $annotation = $this->annotationRepository->find($annotation->getId());
+                return $this->render('annotation/_item.html.twig', [
+                    'annotation' => $annotation,
+                    'participant' => $participant,
+                ]);
+            }
 
             return $this->json($this->annotationService->serialize($reply), Response::HTTP_CREATED);
         } catch (\InvalidArgumentException $e) {
