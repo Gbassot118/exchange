@@ -35,6 +35,9 @@ class Session
     #[ORM\Column(length: 64, unique: true)]
     private string $inviteCode;
 
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $inviteCodeExpiresAt = null;
+
     /** @var Collection<int, Document> */
     #[ORM\OneToMany(targetEntity: Document::class, mappedBy: 'session', cascade: ['persist', 'remove'], orphanRemoval: true)]
     #[ORM\OrderBy(['sortOrder' => 'ASC'])]
@@ -58,6 +61,7 @@ class Session
     {
         $this->id = Uuid::v7();
         $this->inviteCode = bin2hex(random_bytes(16));
+        $this->inviteCodeExpiresAt = new \DateTimeImmutable('+7 days'); // Invite code expires in 7 days
         $this->documents = new ArrayCollection();
         $this->participants = new ArrayCollection();
         $this->decisions = new ArrayCollection();
@@ -117,6 +121,39 @@ class Session
     public function setInviteCode(string $inviteCode): static
     {
         $this->inviteCode = $inviteCode;
+        return $this;
+    }
+
+    public function getInviteCodeExpiresAt(): ?\DateTimeImmutable
+    {
+        return $this->inviteCodeExpiresAt;
+    }
+
+    public function setInviteCodeExpiresAt(?\DateTimeImmutable $expiresAt): static
+    {
+        $this->inviteCodeExpiresAt = $expiresAt;
+        return $this;
+    }
+
+    /**
+     * Check if the invite code has expired.
+     */
+    public function isInviteCodeExpired(): bool
+    {
+        if ($this->inviteCodeExpiresAt === null) {
+            return false; // No expiration set
+        }
+
+        return $this->inviteCodeExpiresAt < new \DateTimeImmutable();
+    }
+
+    /**
+     * Regenerate the invite code with a new expiration.
+     */
+    public function regenerateInviteCode(string $expiration = '+7 days'): static
+    {
+        $this->inviteCode = bin2hex(random_bytes(16));
+        $this->inviteCodeExpiresAt = new \DateTimeImmutable($expiration);
         return $this;
     }
 

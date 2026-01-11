@@ -10,6 +10,7 @@ use App\Application\DTO\Transformer\SessionTransformer;
 use App\Application\Port\EventPublisherInterface;
 use App\Application\Port\RealtimeNotifierInterface;
 use App\Domain\Session\Event\ParticipantJoined;
+use App\Domain\Session\Exception\InviteCodeExpiredException;
 use App\Domain\Session\Exception\SessionArchivedException;
 use App\Domain\Session\Exception\SessionNotFoundException;
 use App\Domain\Session\Repository\ParticipantRepositoryInterface;
@@ -43,6 +44,11 @@ final readonly class JoinSessionHandler
 
         if ($session->getStatus() === 'archive') {
             throw SessionArchivedException::create($session->getId()->toString());
+        }
+
+        // Check if invite code has expired
+        if ($session->isInviteCodeExpired()) {
+            throw InviteCodeExpiredException::create($session->getId()->toString());
         }
 
         // Check if participant already exists (reconnection)

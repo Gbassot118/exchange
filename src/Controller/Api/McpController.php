@@ -31,6 +31,8 @@ use App\Domain\Document\Exception\DocumentNotFoundException;
 use App\Domain\Session\Exception\InvalidSessionStatusTransitionException;
 use App\Domain\Session\Exception\ParticipantNotFoundException;
 use App\Domain\Session\Exception\SessionNotFoundException;
+use App\Security\InvalidParticipantException;
+use App\Security\ParticipantValidator;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -51,6 +53,7 @@ class McpController extends AbstractController
         private readonly UpdateSessionStatusHandler $updateSessionStatusHandler,
         private readonly RespondAnnotationHandler $respondAnnotationHandler,
         private readonly AcknowledgeAnnotationHandler $acknowledgeAnnotationHandler,
+        private readonly ParticipantValidator $participantValidator,
     ) {}
 
     #[Route('/sessions/{sessionId}/documents', name: 'list_documents', methods: ['GET'])]
@@ -109,6 +112,11 @@ class McpController extends AbstractController
                 return $this->json(['error' => 'Le titre est requis'], Response::HTTP_BAD_REQUEST);
             }
 
+            // Validate that the agent belongs to this session (write operation)
+            if (!empty($agentId)) {
+                $this->participantValidator->validateParticipantInSession($agentId, $sessionId);
+            }
+
             $command = new CreateDocumentCommand(
                 sessionId: $sessionId,
                 title: $dto->title,
@@ -123,6 +131,8 @@ class McpController extends AbstractController
             $document = ($this->createDocumentHandler)($command);
 
             return $this->json($document->toArray(), Response::HTTP_CREATED);
+        } catch (InvalidParticipantException $e) {
+            return $this->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (SessionNotFoundException|DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
@@ -138,6 +148,11 @@ class McpController extends AbstractController
             $dto = UpdateDocumentRequest::fromArray($data);
             $agentId = $request->headers->get('X-Agent-Id');
 
+            // Validate that the agent has access to this document (write operation)
+            if (!empty($agentId)) {
+                $this->participantValidator->validateAgentWriteAccess($agentId, $documentId);
+            }
+
             $command = new UpdateDocumentCommand(
                 documentId: $documentId,
                 title: $dto->title,
@@ -152,6 +167,8 @@ class McpController extends AbstractController
             $document = ($this->updateDocumentHandler)($command);
 
             return $this->json($document->toArray());
+        } catch (InvalidParticipantException $e) {
+            return $this->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
@@ -160,13 +177,22 @@ class McpController extends AbstractController
     }
 
     #[Route('/documents/{documentId}', name: 'delete_document', methods: ['DELETE'])]
-    public function deleteDocument(string $documentId): JsonResponse
+    public function deleteDocument(string $documentId, Request $request): JsonResponse
     {
         try {
+            $agentId = $request->headers->get('X-Agent-Id');
+
+            // Validate that the agent has access to this document (write operation)
+            if (!empty($agentId)) {
+                $this->participantValidator->validateAgentWriteAccess($agentId, $documentId);
+            }
+
             $command = new DeleteDocumentCommand(documentId: $documentId);
             ($this->deleteDocumentHandler)($command);
 
             return $this->json(null, Response::HTTP_NO_CONTENT);
+        } catch (InvalidParticipantException $e) {
+            return $this->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (DocumentNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
@@ -295,6 +321,9 @@ class McpController extends AbstractController
                 return $this->json(['error' => 'X-Agent-Id header est requis'], Response::HTTP_BAD_REQUEST);
             }
 
+            // Validate that the agent has access to this annotation
+            $this->participantValidator->validateParticipantAccessToAnnotation($agentId, $annotationId);
+
             $command = new RespondAnnotationCommand(
                 annotationId: $annotationId,
                 authorParticipantId: $agentId,
@@ -305,6 +334,8 @@ class McpController extends AbstractController
             $reply = ($this->respondAnnotationHandler)($command);
 
             return $this->json($reply->toArray(), Response::HTTP_CREATED);
+        } catch (InvalidParticipantException $e) {
+            return $this->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (AnnotationNotFoundException|ParticipantNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (CannotReplyToReplyException $e) {
