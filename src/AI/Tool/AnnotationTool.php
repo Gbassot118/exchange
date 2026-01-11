@@ -13,12 +13,12 @@ use Symfony\Component\Uid\Uuid;
 
 #[AsTool(
     name: 'annotation_operations',
-    description: 'Tool for managing annotations in a collaborative documentation session. Supports reading annotations, responding to them, and acknowledging them.',
+    description: 'Tool for managing comments in a collaborative documentation session. Supports reading comments, responding to them, and resolving them.',
     parameters: [
         'operation' => [
             'type' => 'string',
-            'description' => 'The operation to perform: list, read, respond, acknowledge, resolve',
-            'enum' => ['list', 'read', 'respond', 'acknowledge', 'resolve'],
+            'description' => 'The operation to perform: list, read, respond, resolve',
+            'enum' => ['list', 'read', 'respond', 'resolve'],
             'required' => true,
         ],
         'session_id' => [
@@ -31,25 +31,20 @@ use Symfony\Component\Uid\Uuid;
         ],
         'annotation_id' => [
             'type' => 'string',
-            'description' => 'The annotation UUID (required for read, respond, acknowledge, resolve)',
+            'description' => 'The annotation UUID (required for read, respond, resolve)',
         ],
         'participant_id' => [
             'type' => 'string',
-            'description' => 'The AI agent participant UUID (required for respond, acknowledge, resolve)',
+            'description' => 'The AI agent participant UUID (required for respond, resolve)',
         ],
         'content' => [
             'type' => 'string',
             'description' => 'Response content (required for respond operation)',
         ],
-        'type_filter' => [
-            'type' => 'string',
-            'description' => 'Filter annotations by type',
-            'enum' => ['question', 'objection', 'suggestion', 'comment', 'validation'],
-        ],
         'status_filter' => [
             'type' => 'string',
             'description' => 'Filter annotations by status',
-            'enum' => ['open', 'resolved', 'acknowledged'],
+            'enum' => ['open', 'in_progress', 'resolved'],
         ],
     ]
 )]
@@ -70,14 +65,12 @@ class AnnotationTool
         ?string $annotation_id = null,
         ?string $participant_id = null,
         ?string $content = null,
-        ?string $type_filter = null,
         ?string $status_filter = null,
     ): array {
         return match ($operation) {
-            'list' => $this->listAnnotations($session_id, $document_id, $type_filter, $status_filter),
+            'list' => $this->listAnnotations($session_id, $document_id, $status_filter),
             'read' => $this->readAnnotation($annotation_id),
             'respond' => $this->respondToAnnotation($annotation_id, $participant_id, $content),
-            'acknowledge' => $this->acknowledgeAnnotation($annotation_id, $participant_id),
             'resolve' => $this->resolveAnnotation($annotation_id, $participant_id),
             default => ['error' => 'Unknown operation: ' . $operation],
         };
@@ -86,11 +79,9 @@ class AnnotationTool
     private function listAnnotations(
         ?string $sessionId,
         ?string $documentId,
-        ?string $typeFilter,
         ?string $statusFilter,
     ): array {
         $filters = array_filter([
-            'type' => $typeFilter,
             'status' => $statusFilter,
         ]);
 
@@ -174,39 +165,6 @@ class AnnotationTool
             return [
                 'success' => true,
                 'reply' => $this->serializeAnnotation($reply),
-            ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
-        } catch (\Exception $e) {
-            return ['error' => $e->getMessage()];
-        }
-    }
-
-    private function acknowledgeAnnotation(?string $annotationId, ?string $participantId): array
-    {
-        if (empty($annotationId)) {
-            return ['error' => 'annotation_id is required for acknowledge operation'];
-        }
-        if (empty($participantId)) {
-            return ['error' => 'participant_id is required for acknowledge operation'];
-        }
-
-        try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($annotationId));
-            if ($annotation === null) {
-                return ['error' => 'Annotation not found'];
-            }
-
-            $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-            if ($participant === null) {
-                return ['error' => 'Participant not found'];
-            }
-
-            $annotation = $this->annotationService->setStatus($annotation, Annotation::STATUS_ACKNOWLEDGED);
-
-            return [
-                'success' => true,
-                'annotation' => $this->serializeAnnotation($annotation),
             ];
         } catch (\InvalidArgumentException $e) {
             return ['error' => 'Invalid UUID format'];
