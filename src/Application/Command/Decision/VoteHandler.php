@@ -46,7 +46,7 @@ final readonly class VoteHandler
         }
 
         if ($decision->isLocked()) {
-            throw DecisionLockedException::create($command->decisionId);
+            throw DecisionLockedException::cannotVote($command->decisionId);
         }
 
         $participantId = ParticipantId::fromString($command->participantId);
@@ -58,7 +58,7 @@ final readonly class VoteHandler
 
         $optionId = OptionId::fromString($command->optionId);
         if (!$decision->hasOption($optionId->value())) {
-            throw InvalidOptionException::withId($command->optionId, $command->decisionId);
+            throw InvalidOptionException::notFound($command->optionId, $command->decisionId);
         }
 
         $existingVote = $this->voteRepository->findByDecisionAndParticipant($decision, $participant);

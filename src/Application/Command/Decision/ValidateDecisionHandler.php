@@ -15,6 +15,7 @@ use App\Domain\Decision\Exception\InvalidOptionException;
 use App\Domain\Decision\Repository\DecisionRepositoryInterface;
 use App\Domain\Decision\ValueObject\DecisionId;
 use App\Domain\Decision\ValueObject\OptionId;
+use Symfony\Component\Uid\Uuid;
 
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -38,15 +39,15 @@ final readonly class ValidateDecisionHandler
         }
 
         if ($decision->isLocked()) {
-            throw DecisionLockedException::create($command->decisionId);
+            throw DecisionLockedException::cannotModify($command->decisionId);
         }
 
         $optionId = OptionId::fromString($command->selectedOptionId);
         if (!$decision->hasOption($optionId->value())) {
-            throw InvalidOptionException::withId($command->selectedOptionId, $command->decisionId);
+            throw InvalidOptionException::notFound($command->selectedOptionId, $command->decisionId);
         }
 
-        $decision->validate($optionId->value());
+        $decision->validate(Uuid::fromString($optionId->value()));
         $this->decisionRepository->save($decision);
 
         $sessionId = $decision->getSession()->getId()->toString();
