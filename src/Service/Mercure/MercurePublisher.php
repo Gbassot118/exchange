@@ -200,6 +200,51 @@ class MercurePublisher
         );
     }
 
+    // ============================================
+    // Estimation (Chiffrage) Methods
+    // ============================================
+
+    /**
+     * @param array<string, mixed> $estimation
+     */
+    public function publishEstimationCreated(string $sessionId, array $estimation): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}", "/sessions/{$sessionId}/estimations"],
+            'estimation.created',
+            [
+                'id' => $estimation['id'],
+                'title' => $estimation['title'],
+                'document_id' => $estimation['linked_document_id'] ?? null,
+            ]
+        );
+    }
+
+    public function publishEstimationVoted(string $sessionId, string $estimationId, string $participantId, int $voteCount): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}/estimations"],
+            'estimation.voted',
+            [
+                'estimation_id' => $estimationId,
+                'participant_id' => $participantId,
+                'vote_count' => $voteCount,
+            ]
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $estimation
+     */
+    public function publishEstimationRevealed(string $sessionId, array $estimation): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}", "/sessions/{$sessionId}/estimations"],
+            'estimation.revealed',
+            $estimation
+        );
+    }
+
     /**
      * Generic publish method for use by RealtimeNotifier.
      *

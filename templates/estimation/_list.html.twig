@@ -1,0 +1,14 @@
+<div id="estimations-list" class="estimations-list">
+    {% if estimations|length > 0 %}
+        {% for estimation in estimations %}
+            {% include 'estimation/_card.html.twig' with {'estimation': estimation, 'participant': participant} %}
+        {% endfor %}
+    {% else %}
+        <div class="text-center py-6 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+            </svg>
+            <p class="text-sm">Aucun chiffrage pour le moment</p>
+        </div>
+    {% endif %}
+</div>
