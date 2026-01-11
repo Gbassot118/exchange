@@ -16,7 +16,6 @@ use App\Application\Query\Session\GetSessionHandler;
 use App\Application\Query\Session\ListSessionsQuery;
 use App\Application\Query\Session\ListSessionsHandler;
 use App\Domain\Session\Exception\InvalidSessionStatusTransitionException;
-use App\Domain\Session\Exception\InviteCodeExpiredException;
 use App\Domain\Session\Exception\SessionArchivedException;
 use App\Domain\Session\Exception\SessionNotFoundException;
 use App\Domain\Session\ValueObject\SessionStatus;
@@ -165,8 +164,6 @@ class SessionController extends AbstractController
             return $this->json(['error' => 'Code d\'invitation invalide'], Response::HTTP_NOT_FOUND);
         } catch (SessionArchivedException $e) {
             return $this->json(['error' => 'Cette session est archivée'], Response::HTTP_GONE);
-        } catch (InviteCodeExpiredException $e) {
-            return $this->json(['error' => $e->getMessage()], Response::HTTP_GONE);
         }
     }
 
