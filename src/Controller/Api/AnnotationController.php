@@ -2,11 +2,24 @@
 
 namespace App\Controller\Api;
 
+use App\Application\Command\Annotation\CreateAnnotationCommand;
+use App\Application\Command\Annotation\CreateAnnotationHandler;
+use App\Application\Command\Annotation\RespondAnnotationCommand;
+use App\Application\Command\Annotation\RespondAnnotationHandler;
+use App\Application\Command\Annotation\ResolveAnnotationCommand;
+use App\Application\Command\Annotation\ResolveAnnotationHandler;
+use App\Application\Command\Annotation\UpdateAnnotationCommand;
+use App\Application\Command\Annotation\UpdateAnnotationHandler;
+use App\Application\DTO\Request\CreateAnnotationRequest;
+use App\Application\Query\Annotation\GetAnnotationHandler;
+use App\Application\Query\Annotation\GetAnnotationQuery;
+use App\Domain\Collaboration\Exception\AnnotationNotFoundException;
+use App\Domain\Collaboration\Exception\CannotReplyToReplyException;
+use App\Domain\Document\Exception\DocumentNotFoundException;
+use App\Domain\Session\Exception\ParticipantNotFoundException;
 use App\Entity\Annotation;
 use App\Repository\AnnotationRepository;
-use App\Repository\DocumentRepository;
 use App\Repository\ParticipantRepository;
-use App\Service\Annotation\AnnotationService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,9 +31,12 @@ use Symfony\Component\Uid\Uuid;
 class AnnotationController extends AbstractController
 {
     public function __construct(
-        private readonly AnnotationService $annotationService,
+        private readonly CreateAnnotationHandler $createAnnotationHandler,
+        private readonly GetAnnotationHandler $getAnnotationHandler,
+        private readonly UpdateAnnotationHandler $updateAnnotationHandler,
+        private readonly ResolveAnnotationHandler $resolveAnnotationHandler,
+        private readonly RespondAnnotationHandler $respondAnnotationHandler,
         private readonly AnnotationRepository $annotationRepository,
-        private readonly DocumentRepository $documentRepository,
         private readonly ParticipantRepository $participantRepository,
     ) {}
 
@@ -47,31 +63,27 @@ class AnnotationController extends AbstractController
             return $this->json(['error' => 'Le contenu est requis'], Response::HTTP_BAD_REQUEST);
         }
 
+        $type = $data['type'] ?? Annotation::TYPE_COMMENT;
+        if (!in_array($type, Annotation::TYPES)) {
+            return $this->json(['error' => 'Type d\'annotation invalide'], Response::HTTP_BAD_REQUEST);
+        }
+
         try {
-            $document = $this->documentRepository->find(Uuid::fromString($data['document_id']));
-            if ($document === null) {
-                return $this->json(['error' => 'Document non trouvé'], Response::HTTP_NOT_FOUND);
-            }
-
-            $participant = $this->participantRepository->find(Uuid::fromString($data['participant_id']));
-            if ($participant === null) {
-                return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
-            }
-
-            $type = $data['type'] ?? Annotation::TYPE_COMMENT;
-            if (!in_array($type, Annotation::TYPES)) {
-                return $this->json(['error' => 'Type d\'annotation invalide'], Response::HTTP_BAD_REQUEST);
-            }
-
-            $annotation = $this->annotationService->create(
-                $document,
-                $participant,
-                $data['content'],
-                $type,
-                $data['anchor'] ?? null
+            $command = new CreateAnnotationCommand(
+                documentId: $data['document_id'],
+                authorParticipantId: $data['participant_id'],
+                content: $data['content'],
+                type: $type,
+                anchor: $data['anchor'] ?? null,
             );
 
-            return $this->json($this->annotationService->serialize($annotation), Response::HTTP_CREATED);
+            $annotation = ($this->createAnnotationHandler)($command);
+
+            return $this->json($annotation->toArray(), Response::HTTP_CREATED);
+        } catch (DocumentNotFoundException $e) {
+            return $this->json(['error' => 'Document non trouvé'], Response::HTTP_NOT_FOUND);
+        } catch (ParticipantNotFoundException $e) {
+            return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
@@ -81,19 +93,16 @@ class AnnotationController extends AbstractController
     public function show(string $id): JsonResponse
     {
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($id));
-
-            if ($annotation === null) {
-                return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
-            $data = $this->annotationService->serialize($annotation);
-            $data['replies'] = array_map(
-                fn($r) => $this->annotationService->serialize($r),
-                $annotation->getReplies()->toArray()
+            $query = new GetAnnotationQuery(
+                annotationId: $id,
+                includeReplies: true,
             );
 
-            return $this->json($data);
+            $annotation = ($this->getAnnotationHandler)($query);
+
+            return $this->json($annotation->toArray());
+        } catch (AnnotationNotFoundException $e) {
+            return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => 'ID invalide'], Response::HTTP_BAD_REQUEST);
         }
@@ -103,23 +112,19 @@ class AnnotationController extends AbstractController
     public function update(string $id, Request $request): JsonResponse
     {
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($id));
-
-            if ($annotation === null) {
-                return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
             $data = $request->toArray();
 
-            if (!empty($data['content'])) {
-                $annotation = $this->annotationService->update($annotation, $data['content']);
-            }
+            $command = new UpdateAnnotationCommand(
+                annotationId: $id,
+                content: $data['content'] ?? null,
+                status: $data['status'] ?? null,
+            );
 
-            if (!empty($data['status']) && in_array($data['status'], Annotation::STATUSES)) {
-                $annotation = $this->annotationService->setStatus($annotation, $data['status']);
-            }
+            $annotation = ($this->updateAnnotationHandler)($command);
 
-            return $this->json($this->annotationService->serialize($annotation));
+            return $this->json($annotation->toArray());
+        } catch (AnnotationNotFoundException $e) {
+            return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
@@ -129,12 +134,6 @@ class AnnotationController extends AbstractController
     public function resolve(string $id, Request $request): Response
     {
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($id));
-
-            if ($annotation === null) {
-                return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
             // Support both JSON and form data
             $contentType = $request->headers->get('Content-Type', '');
             if (str_contains($contentType, 'application/json')) {
@@ -147,22 +146,29 @@ class AnnotationController extends AbstractController
                 return $this->json(['error' => 'participant_id est requis'], Response::HTTP_BAD_REQUEST);
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($data['participant_id']));
-            if ($participant === null) {
-                return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
-            }
+            $command = new ResolveAnnotationCommand(
+                annotationId: $id,
+                resolvedByParticipantId: $data['participant_id'],
+            );
 
-            $annotation = $this->annotationService->resolve($annotation, $participant);
+            $annotation = ($this->resolveAnnotationHandler)($command);
 
             // Return HTML for HTMX requests, JSON otherwise
             if ($request->headers->has('HX-Request')) {
+                // Need to get the entity for Twig template
+                $annotationEntity = $this->annotationRepository->find(Uuid::fromString($id));
+                $participant = $this->participantRepository->find(Uuid::fromString($data['participant_id']));
                 return $this->render('annotation/_item.html.twig', [
-                    'annotation' => $annotation,
+                    'annotation' => $annotationEntity,
                     'participant' => $participant,
                 ]);
             }
 
-            return $this->json($this->annotationService->serialize($annotation));
+            return $this->json($annotation->toArray());
+        } catch (AnnotationNotFoundException $e) {
+            return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
+        } catch (ParticipantNotFoundException $e) {
+            return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
@@ -172,12 +178,6 @@ class AnnotationController extends AbstractController
     public function reply(string $id, Request $request): Response
     {
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($id));
-
-            if ($annotation === null) {
-                return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
-            }
-
             // Support both JSON and form data
             $contentType = $request->headers->get('Content-Type', '');
             if (str_contains($contentType, 'application/json')) {
@@ -194,24 +194,33 @@ class AnnotationController extends AbstractController
                 return $this->json(['error' => 'Le contenu est requis'], Response::HTTP_BAD_REQUEST);
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($data['participant_id']));
-            if ($participant === null) {
-                return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
-            }
+            $command = new RespondAnnotationCommand(
+                annotationId: $id,
+                authorParticipantId: $data['participant_id'],
+                content: $data['content'],
+                markAsResolved: $data['mark_as_resolved'] ?? false,
+            );
 
-            $reply = $this->annotationService->createReply($annotation, $data['content'], $participant);
+            $reply = ($this->respondAnnotationHandler)($command);
 
             // Return HTML for HTMX requests, JSON otherwise
             if ($request->headers->has('HX-Request')) {
                 // Refresh the parent annotation to include the new reply
-                $annotation = $this->annotationRepository->find($annotation->getId());
+                $annotation = $this->annotationRepository->find(Uuid::fromString($id));
+                $participant = $this->participantRepository->find(Uuid::fromString($data['participant_id']));
                 return $this->render('annotation/_item.html.twig', [
                     'annotation' => $annotation,
                     'participant' => $participant,
                 ]);
             }
 
-            return $this->json($this->annotationService->serialize($reply), Response::HTTP_CREATED);
+            return $this->json($reply->toArray(), Response::HTTP_CREATED);
+        } catch (AnnotationNotFoundException $e) {
+            return $this->json(['error' => 'Annotation non trouvée'], Response::HTTP_NOT_FOUND);
+        } catch (ParticipantNotFoundException $e) {
+            return $this->json(['error' => 'Participant non trouvé'], Response::HTTP_NOT_FOUND);
+        } catch (CannotReplyToReplyException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }

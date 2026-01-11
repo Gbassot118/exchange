@@ -14,7 +14,7 @@ class MercurePublisher
 
     public function publishDocumentCreated(string $sessionId, array $document): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/documents"],
             'document.created',
             $document
@@ -23,7 +23,7 @@ class MercurePublisher
 
     public function publishDocumentUpdated(string $sessionId, string $documentId, array $document): void
     {
-        $this->publish(
+        $this->publishToTopics(
             [
                 "/sessions/{$sessionId}/documents",
                 "/sessions/{$sessionId}/documents/{$documentId}"
@@ -35,7 +35,7 @@ class MercurePublisher
 
     public function publishDocumentDeleted(string $sessionId, string $documentId): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/documents"],
             'document.deleted',
             ['id' => $documentId]
@@ -44,7 +44,7 @@ class MercurePublisher
 
     public function publishAnnotationCreated(string $sessionId, string $documentId, array $annotation): void
     {
-        $this->publish(
+        $this->publishToTopics(
             [
                 "/sessions/{$sessionId}/annotations",
                 "/sessions/{$sessionId}/documents/{$documentId}"
@@ -56,7 +56,7 @@ class MercurePublisher
 
     public function publishAnnotationUpdated(string $sessionId, string $documentId, array $annotation): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/annotations"],
             'annotation.updated',
             $annotation
@@ -65,7 +65,7 @@ class MercurePublisher
 
     public function publishAnnotationResolved(string $sessionId, string $documentId, array $annotation): void
     {
-        $this->publish(
+        $this->publishToTopics(
             [
                 "/sessions/{$sessionId}/annotations",
                 "/sessions/{$sessionId}/documents/{$documentId}"
@@ -77,7 +77,7 @@ class MercurePublisher
 
     public function publishVoteReceived(string $sessionId, string $decisionId, array $voteStats): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/decisions"],
             'vote.received',
             ['decision_id' => $decisionId, 'stats' => $voteStats]
@@ -86,7 +86,7 @@ class MercurePublisher
 
     public function publishDecisionStatusChanged(string $sessionId, array $decision): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/decisions"],
             'decision.status_changed',
             $decision
@@ -96,7 +96,7 @@ class MercurePublisher
     public function publishDecisionCreated(Decision $decision): void
     {
         $sessionId = $decision->getSession()->getId()->toString();
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}", "/sessions/{$sessionId}/decisions"],
             'decision.created',
             [
@@ -107,9 +107,27 @@ class MercurePublisher
         );
     }
 
+    /**
+     * Publish decision created event from a response array.
+     *
+     * @param array<string, mixed> $decisionData
+     */
+    public function publishDecisionCreatedFromResponse(string $sessionId, array $decisionData): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}", "/sessions/{$sessionId}/decisions"],
+            'decision.created',
+            [
+                'id' => $decisionData['id'],
+                'title' => $decisionData['title'],
+                'document_id' => $decisionData['linked_document_id'] ?? null,
+            ]
+        );
+    }
+
     public function publishDecisionDeleted(string $sessionId, string $decisionId, ?string $documentId): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}", "/sessions/{$sessionId}/decisions"],
             'decision.deleted',
             [
@@ -122,7 +140,7 @@ class MercurePublisher
     public function publishDecisionUpdated(Decision $decision): void
     {
         $sessionId = $decision->getSession()->getId()->toString();
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}", "/sessions/{$sessionId}/decisions"],
             'decision.updated',
             [
@@ -135,9 +153,29 @@ class MercurePublisher
         );
     }
 
+    /**
+     * Publish decision updated event from a response array.
+     *
+     * @param array<string, mixed> $decisionData
+     */
+    public function publishDecisionUpdatedFromResponse(string $sessionId, array $decisionData): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}", "/sessions/{$sessionId}/decisions"],
+            'decision.updated',
+            [
+                'id' => $decisionData['id'],
+                'title' => $decisionData['title'],
+                'status' => $decisionData['status'],
+                'vote_stats' => $decisionData['vote_stats'],
+                'document_id' => $decisionData['linked_document_id'] ?? null,
+            ]
+        );
+    }
+
     public function publishPresenceUpdate(string $sessionId, array $participants): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/presence"],
             'presence.update',
             ['participants' => $participants]
@@ -146,7 +184,7 @@ class MercurePublisher
 
     public function publishUserFollowing(string $sessionId, string $participantId, ?string $targetDocumentId): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}/presence"],
             'presence.following',
             ['participant_id' => $participantId, 'document_id' => $targetDocumentId]
@@ -155,14 +193,28 @@ class MercurePublisher
 
     public function publishSessionStatusChanged(string $sessionId, string $status): void
     {
-        $this->publish(
+        $this->publishToTopics(
             ["/sessions/{$sessionId}"],
             'session.status_changed',
             ['status' => $status]
         );
     }
 
-    private function publish(array $topics, string $type, array $data): void
+    /**
+     * Generic publish method for use by RealtimeNotifier.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function publish(string $topic, array $data): void
+    {
+        $type = $data['type'] ?? 'message';
+        $this->publishToTopics([$topic], $type, $data);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function publishToTopics(array $topics, string $type, array $data): void
     {
         $update = new Update(
             $topics,

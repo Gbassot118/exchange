@@ -2,6 +2,8 @@
 
 namespace App\Repository;
 
+use App\Domain\Decision\Repository\DecisionRepositoryInterface;
+use App\Domain\Decision\ValueObject\DecisionId;
 use App\Entity\Decision;
 use App\Entity\Session;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -10,14 +12,14 @@ use Doctrine\Persistence\ManagerRegistry;
 /**
  * @extends ServiceEntityRepository<Decision>
  */
-class DecisionRepository extends ServiceEntityRepository
+class DecisionRepository extends ServiceEntityRepository implements DecisionRepositoryInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, Decision::class);
     }
 
-    public function save(Decision $entity, bool $flush = false): void
+    public function save(Decision $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
 
@@ -26,13 +28,18 @@ class DecisionRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Decision $entity, bool $flush = false): void
+    public function remove(Decision $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
 
         if ($flush) {
             $this->getEntityManager()->flush();
         }
+    }
+
+    public function findById(DecisionId $id): ?Decision
+    {
+        return $this->find($id->value());
     }
 
     /**
@@ -96,15 +103,17 @@ class DecisionRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    public function findByIdWithVotes(string $id): ?Decision
+    public function findByIdWithVotes(DecisionId|string $id): ?Decision
     {
+        $idValue = $id instanceof DecisionId ? $id->value() : $id;
+
         return $this->createQueryBuilder('d')
             ->leftJoin('d.votes', 'v')
             ->addSelect('v')
             ->leftJoin('v.participant', 'p')
             ->addSelect('p')
             ->where('d.id = :id')
-            ->setParameter('id', $id, 'uuid')
+            ->setParameter('id', $idValue, 'uuid')
             ->getQuery()
             ->getOneOrNullResult();
     }

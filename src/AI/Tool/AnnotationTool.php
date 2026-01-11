@@ -1,15 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\AI\Tool;
 
-use App\Entity\Annotation;
-use App\Repository\AnnotationRepository;
-use App\Repository\DocumentRepository;
-use App\Repository\ParticipantRepository;
-use App\Repository\SessionRepository;
-use App\Service\Annotation\AnnotationService;
+use App\Application\Command\Annotation\RespondAnnotationCommand;
+use App\Application\Command\Annotation\ResolveAnnotationCommand;
+use App\Application\DTO\Response\AnnotationResponse;
+use App\Application\Query\Annotation\GetAnnotationQuery;
+use App\Application\Query\Annotation\ListAnnotationsQuery;
 use Symfony\AI\Attribute\AsTool;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 #[AsTool(
     name: 'annotation_operations',
@@ -51,11 +54,7 @@ use Symfony\Component\Uid\Uuid;
 class AnnotationTool
 {
     public function __construct(
-        private readonly AnnotationService $annotationService,
-        private readonly AnnotationRepository $annotationRepository,
-        private readonly DocumentRepository $documentRepository,
-        private readonly SessionRepository $sessionRepository,
-        private readonly ParticipantRepository $participantRepository,
+        private readonly MessageBusInterface $messageBus,
     ) {}
 
     public function __invoke(
@@ -81,32 +80,49 @@ class AnnotationTool
         ?string $documentId,
         ?string $statusFilter,
     ): array {
-        $filters = array_filter([
-            'status' => $statusFilter,
-        ]);
+        if (empty($sessionId) && empty($documentId)) {
+            return ['error' => 'Either session_id or document_id is required for list operation'];
+        }
+
+        // If only documentId is provided, we need sessionId too for the query
+        // The ListAnnotationsQuery requires sessionId
+        if (empty($sessionId)) {
+            return ['error' => 'session_id is required for list operation'];
+        }
 
         try {
-            if (!empty($documentId)) {
-                $document = $this->documentRepository->find(Uuid::fromString($documentId));
-                if ($document === null) {
-                    return ['error' => 'Document not found'];
-                }
-                $annotations = $this->annotationRepository->findByDocumentWithFilters($document, $filters);
-            } elseif (!empty($sessionId)) {
-                $session = $this->sessionRepository->find(Uuid::fromString($sessionId));
-                if ($session === null) {
-                    return ['error' => 'Session not found'];
-                }
-                $annotations = $this->annotationRepository->findBySessionWithFilters($session, $filters);
-            } else {
-                return ['error' => 'Either session_id or document_id is required for list operation'];
+            $filters = [];
+            if ($statusFilter !== null) {
+                $filters['status'] = $statusFilter;
             }
 
+            $query = new ListAnnotationsQuery(
+                sessionId: $sessionId,
+                documentId: $documentId,
+                filters: $filters,
+                includeReplies: true,
+            );
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
+            }
+
+            /** @var array<AnnotationResponse> $annotations */
+            $annotations = $handledStamp->getResult();
+
             return [
-                'annotations' => array_map(fn($ann) => $this->serializeAnnotation($ann), $annotations),
+                'annotations' => array_map(
+                    fn(AnnotationResponse $ann) => $this->serializeAnnotation($ann),
+                    $annotations
+                ),
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
     }
 
@@ -117,20 +133,32 @@ class AnnotationTool
         }
 
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($annotationId));
-            if ($annotation === null) {
-                return ['error' => 'Annotation not found'];
+            $query = new GetAnnotationQuery(
+                annotationId: $annotationId,
+                includeReplies: true,
+            );
+
+            $envelope = $this->messageBus->dispatch($query);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Query was not handled'];
             }
+
+            /** @var AnnotationResponse $annotation */
+            $annotation = $handledStamp->getResult();
 
             $data = $this->serializeAnnotation($annotation);
             $data['replies'] = array_map(
-                fn($r) => $this->serializeAnnotation($r),
-                $annotation->getReplies()->toArray()
+                fn(AnnotationResponse $r) => $this->serializeAnnotation($r),
+                $annotation->replies ?? []
             );
 
             return ['annotation' => $data];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid annotation_id format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
         }
     }
 
@@ -150,24 +178,28 @@ class AnnotationTool
         }
 
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($annotationId));
-            if ($annotation === null) {
-                return ['error' => 'Annotation not found'];
+            $command = new RespondAnnotationCommand(
+                annotationId: $annotationId,
+                authorParticipantId: $participantId,
+                content: $content,
+            );
+
+            $envelope = $this->messageBus->dispatch($command);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Command was not handled'];
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-            if ($participant === null) {
-                return ['error' => 'Participant not found'];
-            }
-
-            $reply = $this->annotationService->createReply($annotation, $content, $participant);
+            /** @var AnnotationResponse $reply */
+            $reply = $handledStamp->getResult();
 
             return [
                 'success' => true,
                 'reply' => $this->serializeAnnotation($reply),
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }
@@ -183,47 +215,45 @@ class AnnotationTool
         }
 
         try {
-            $annotation = $this->annotationRepository->find(Uuid::fromString($annotationId));
-            if ($annotation === null) {
-                return ['error' => 'Annotation not found'];
+            $command = new ResolveAnnotationCommand(
+                annotationId: $annotationId,
+                resolvedByParticipantId: $participantId,
+            );
+
+            $envelope = $this->messageBus->dispatch($command);
+            $handledStamp = $envelope->last(HandledStamp::class);
+
+            if ($handledStamp === null) {
+                return ['error' => 'Command was not handled'];
             }
 
-            $participant = $this->participantRepository->find(Uuid::fromString($participantId));
-            if ($participant === null) {
-                return ['error' => 'Participant not found'];
-            }
-
-            $annotation = $this->annotationService->resolve($annotation, $participant);
+            /** @var AnnotationResponse $annotation */
+            $annotation = $handledStamp->getResult();
 
             return [
                 'success' => true,
                 'annotation' => $this->serializeAnnotation($annotation),
             ];
-        } catch (\InvalidArgumentException $e) {
-            return ['error' => 'Invalid UUID format'];
+        } catch (ExceptionInterface $e) {
+            return ['error' => $e->getMessage()];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }
     }
 
-    private function serializeAnnotation(Annotation $annotation): array
+    private function serializeAnnotation(AnnotationResponse $annotation): array
     {
         return [
-            'id' => $annotation->getId()->toString(),
-            'content' => $annotation->getContent(),
-            'type' => $annotation->getType(),
-            'status' => $annotation->getStatus(),
-            'author' => [
-                'id' => $annotation->getAuthor()->getId()->toString(),
-                'pseudo' => $annotation->getAuthor()->getPseudo(),
-                'is_agent' => $annotation->getAuthor()->isAgent(),
-            ],
-            'document_id' => $annotation->getDocument()->getId()->toString(),
-            'document_title' => $annotation->getDocument()->getTitle(),
-            'anchor' => $annotation->getAnchor(),
-            'taken_into_account' => $annotation->isTakenIntoAccount(),
-            'created_at' => $annotation->getCreatedAt()->format('c'),
-            'replies_count' => $annotation->getReplies()->count(),
+            'id' => $annotation->id,
+            'content' => $annotation->content,
+            'type' => $annotation->type,
+            'status' => $annotation->status,
+            'author' => $annotation->author,
+            'document_id' => $annotation->documentId,
+            'anchor' => $annotation->anchor ?? null,
+            'taken_into_account' => $annotation->takenIntoAccount,
+            'created_at' => $annotation->createdAt,
+            'replies_count' => $annotation->replyCount,
         ];
     }
 }
