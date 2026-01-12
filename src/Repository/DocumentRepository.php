@@ -94,6 +94,26 @@ class DocumentRepository extends ServiceEntityRepository implements DocumentRepo
         return $this->findBySession($session, null, null);
     }
 
+    /**
+     * Find all documents in a session (including children).
+     *
+     * @return Document[]
+     */
+    public function findAllBySession(Session $session, ?string $type = null): array
+    {
+        $qb = $this->createQueryBuilder('d')
+            ->where('d.session = :session')
+            ->setParameter('session', $session)
+            ->orderBy('d.sortOrder', 'ASC');
+
+        if ($type !== null) {
+            $qb->andWhere('d.type = :type')
+               ->setParameter('type', $type);
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
     public function findOneBySessionAndSlug(Session $session, string $slug): ?Document
     {
         return $this->findOneBy([

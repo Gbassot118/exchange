@@ -11,6 +11,7 @@ final class DocumentResponse
     /**
      * @param array<AnnotationResponse>|null $annotations
      * @param array<DocumentVersionResponse>|null $versions
+     * @param array<DocumentResponse>|null $children
      */
     public function __construct(
         public readonly string $id,
@@ -26,6 +27,7 @@ final class DocumentResponse
         public readonly ?array $metadata = null,
         public ?array $annotations = null,
         public ?array $versions = null,
+        public ?array $children = null,
     ) {}
 
     public static function fromEntity(
@@ -80,6 +82,9 @@ final class DocumentResponse
                 : null,
             'versions' => $this->versions !== null
                 ? array_map(fn($v) => $v->toArray(), $this->versions)
+                : null,
+            'children' => $this->children !== null
+                ? array_map(fn($c) => $c->toArray(), $this->children)
                 : null,
         ], fn($value) => $value !== null);
     }
