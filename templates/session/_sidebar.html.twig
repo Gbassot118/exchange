@@ -23,7 +23,7 @@
         </button>
     </div>
 
-    <ul class="space-y-1" id="document-tree" sse-swap="document.created:beforeend">
+    <ul class="space-y-1 sortable-list" id="document-tree" data-parent-id="root" sse-swap="document.created:beforeend">
         {% for doc in documents %}
             {% include 'session/_document_item.html.twig' with {document: doc, level: 0} %}
         {% else %}

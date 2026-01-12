@@ -9,7 +9,7 @@
      data-participant-id="{{ participant.id }}">
 
     <!-- Sidebar - Navigation des documents -->
-    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <aside class="w-80 bg-white border-r border-gray-200 flex flex-col">
         {% include 'session/_sidebar.html.twig' %}
     </aside>
 
@@ -123,9 +123,76 @@
     // Make toggleDocumentCollapse available globally (called from onclick in template)
     window.toggleDocumentCollapse = toggleDocumentCollapse;
 
-    // Initialize collapsed state on page load
+    // ====== DRAG AND DROP DOCUMENT REORDERING ======
+    function initDocumentSortable() {
+        document.querySelectorAll('.sortable-list').forEach(container => {
+            // Destroy existing instance if any
+            if (container.sortableInstance) {
+                container.sortableInstance.destroy();
+            }
+
+            const parentId = container.dataset.parentId;
+
+            container.sortableInstance = new Sortable(container, {
+                group: {
+                    name: `level-${parentId}`,
+                    pull: false,
+                    put: false
+                },
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                filter: '#empty-docs-message',
+
+                onEnd: function(evt) {
+                    if (evt.oldIndex === evt.newIndex) return;
+
+                    const listItems = Array.from(evt.to.children).filter(el => el.dataset.docId);
+
+                    // Update sort order for all items to ensure proper ordering
+                    const updates = listItems.map((item, index) => ({
+                        id: item.dataset.docId,
+                        sortOrder: index * 10
+                    }));
+
+                    updateAllDocumentSortOrders(updates);
+                }
+            });
+        });
+    }
+
+    async function updateAllDocumentSortOrders(updates) {
+        try {
+            // Update all documents in parallel
+            const promises = updates.map(update =>
+                fetch(`/api/mcp/documents/${update.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Agent-Id': participantId
+                    },
+                    body: JSON.stringify({ sort_order: update.sortOrder })
+                })
+            );
+
+            const responses = await Promise.all(promises);
+            const failed = responses.some(r => !r.ok);
+
+            if (failed) {
+                console.error('Failed to update some sort orders');
+                refreshDocumentTree();
+            }
+        } catch (error) {
+            console.error('Error updating sort orders:', error);
+            refreshDocumentTree();
+        }
+    }
+
+    // Initialize collapsed state and sortable on page load
     document.addEventListener('DOMContentLoaded', () => {
         restoreCollapsedState();
+        initDocumentSortable();
     });
 
     // ====== PRESENCE INDICATORS IN SIDEBAR ======
@@ -194,6 +261,8 @@
         }).then(() => {
             // Restore collapsed state after refresh
             restoreCollapsedState();
+            // Re-initialize sortable after refresh
+            initDocumentSortable();
             // Re-apply presence indicators
             if (lastPresenceData.length > 0) {
                 updateDocumentPresenceIndicators(lastPresenceData);
