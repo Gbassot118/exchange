@@ -34,7 +34,7 @@ const http = require('http');
 
 const agent = new https.Agent({ rejectUnauthorized: false });
 
-async function apiCall(method, path, body = null) {
+async function apiCall(method, path, body = null, extraHeaders = {}) {
   const url = new URL(path, baseUrl);
   const isHttps = url.protocol === 'https:';
   const lib = isHttps ? https : http;
@@ -48,6 +48,7 @@ async function apiCall(method, path, body = null) {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...extraHeaders,
       },
       agent: isHttps ? agent : undefined,
     };
@@ -291,6 +292,87 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'update_session_status',
+    description: 'Update the session status. IMPORTANT: Use "en_cours" when you start working on a session, "termine" when all work is done.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'New status for the session',
+          enum: ['preparation', 'en_cours', 'termine', 'archive']
+        },
+      },
+      required: ['status'],
+    },
+  },
+  {
+    name: 'list_estimations',
+    description: 'List all Planning Poker estimations in the current session. Use to see pending estimations that need votes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by status (optional)',
+          enum: ['open', 'revealed']
+        },
+        document_id: { type: 'string', description: 'Filter by linked document UUID (optional)' },
+      },
+    },
+  },
+  {
+    name: 'create_estimation',
+    description: 'Create a new Planning Poker estimation for team effort sizing. Participants vote using Fibonacci values.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Estimation title (e.g., "Implementation of feature X")' },
+        description: { type: 'string', description: 'Description or context for the estimation (optional)' },
+        document_id: { type: 'string', description: 'Link to a document UUID (optional)' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'read_estimation',
+    description: 'Get details of a specific estimation including votes (if revealed)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        estimation_id: { type: 'string', description: 'Estimation UUID' },
+      },
+      required: ['estimation_id'],
+    },
+  },
+  {
+    name: 'vote_estimation',
+    description: 'Cast a vote on a Planning Poker estimation using Fibonacci values (0, 1, 2, 3, 5, 8, 13, 21, or ? for uncertainty)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        estimation_id: { type: 'string', description: 'Estimation UUID' },
+        value: {
+          type: 'string',
+          description: 'Fibonacci vote value',
+          enum: ['0', '1', '2', '3', '5', '8', '13', '21', '?']
+        },
+      },
+      required: ['estimation_id', 'value'],
+    },
+  },
+  {
+    name: 'reveal_estimation',
+    description: 'Reveal all votes for an estimation. Use after all participants have voted.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        estimation_id: { type: 'string', description: 'Estimation UUID' },
+      },
+      required: ['estimation_id'],
     },
   },
 ];
@@ -622,6 +704,127 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }, null, 2),
           }],
         };
+      }
+
+      case 'update_session_status': {
+        if (!sessionId) {
+          throw new Error('No active session. Use create_session or join_session first.');
+        }
+        const response = await apiCall('PATCH', `/api/mcp/sessions/${sessionId}/status`, {
+          status: args.status,
+        });
+
+        if (response.status === 200) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                session: response.data,
+                message: `Session status updated to "${args.status}"`,
+              }, null, 2),
+            }],
+          };
+        }
+        throw new Error(response.data?.error || 'Failed to update session status');
+      }
+
+      case 'list_estimations': {
+        if (!sessionId) {
+          throw new Error('No active session. Use create_session or join_session first.');
+        }
+
+        let url = `/api/mcp/sessions/${sessionId}/estimations`;
+        const params = new URLSearchParams();
+        if (args.status) params.append('status', args.status);
+        if (args.document_id) params.append('document_id', args.document_id);
+        if (params.toString()) url += '?' + params.toString();
+
+        const response = await apiCall('GET', url);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(response.data, null, 2),
+          }],
+        };
+      }
+
+      case 'create_estimation': {
+        if (!sessionId) {
+          throw new Error('No active session. Use create_session or join_session first.');
+        }
+        const response = await apiCall('POST', `/api/mcp/sessions/${sessionId}/estimations`, {
+          title: args.title,
+          description: args.description,
+          document_id: args.document_id,
+        });
+
+        if (response.status === 201) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                estimation: response.data,
+                message: `Estimation "${args.title}" created. Participants can now vote using Fibonacci values.`,
+                fibonacci_values: ['0', '1', '2', '3', '5', '8', '13', '21', '?'],
+              }, null, 2),
+            }],
+          };
+        }
+        throw new Error(response.data?.error || 'Failed to create estimation');
+      }
+
+      case 'read_estimation': {
+        const response = await apiCall('GET', `/api/mcp/estimations/${args.estimation_id}`);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(response.data, null, 2),
+          }],
+        };
+      }
+
+      case 'vote_estimation': {
+        if (!participantId) {
+          throw new Error('No active session. Use create_session or join_session first.');
+        }
+        const response = await apiCall('POST', `/api/mcp/estimations/${args.estimation_id}/vote`, {
+          value: args.value,
+        }, { 'X-Agent-Id': participantId });
+
+        if (response.status === 200) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                estimation: response.data.estimation,
+                voted: true,
+                message: `Vote "${args.value}" recorded.`,
+              }, null, 2),
+            }],
+          };
+        }
+        throw new Error(response.data?.error || 'Failed to vote on estimation');
+      }
+
+      case 'reveal_estimation': {
+        const response = await apiCall('POST', `/api/mcp/estimations/${args.estimation_id}/reveal`);
+
+        if (response.status === 200) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                estimation: response.data,
+                message: `Votes revealed. Average: ${response.data.average || 'N/A'}`,
+              }, null, 2),
+            }],
+          };
+        }
+        throw new Error(response.data?.error || 'Failed to reveal estimation');
       }
 
       default:
