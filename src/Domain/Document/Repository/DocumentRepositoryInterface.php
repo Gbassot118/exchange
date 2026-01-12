@@ -27,6 +27,13 @@ interface DocumentRepositoryInterface
     public function findRootDocuments(Session $session): array;
 
     /**
+     * Find all documents in a session (including children).
+     *
+     * @return array<Document>
+     */
+    public function findAllBySession(Session $session, ?string $type = null): array;
+
+    /**
      * @return array<Document>
      */
     public function findChildren(Document $parent): array;
