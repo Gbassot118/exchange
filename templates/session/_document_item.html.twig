@@ -1,5 +1,15 @@
-<li id="doc-item-{{ document.id }}">
+<li id="doc-item-{{ document.id }}"
+    data-doc-id="{{ document.id }}"
+    data-parent-id="{{ document.parent ? document.parent.id : 'root' }}"
+    data-sort-order="{{ document.sortOrder }}">
     <div class="flex items-center" style="padding-left: {{ (level * 12) }}px">
+        {# Poignee de drag (visible au hover) #}
+        <span class="drag-handle text-gray-400 hover:text-gray-600 flex-shrink-0"
+              title="Glisser pour reordonner">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+            </svg>
+        </span>
         {# Bouton chevron pour collapse/expand (seulement si a des enfants) #}
         {% if document.children|length > 0 %}
             <button type="button"
@@ -11,9 +21,6 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                 </svg>
             </button>
-        {% else %}
-            {# Espace reserve pour aligner les documents sans enfants #}
-            <span class="w-4 flex-shrink-0"></span>
         {% endif %}
 
         <a href="/session/{{ session.id }}/document/{{ document.slug }}"
@@ -21,7 +28,7 @@
            hx-target="#document-content"
            hx-swap="innerHTML"
            hx-push-url="true"
-           class="flex items-start flex-1 px-2 py-1.5 rounded text-sm hover:bg-gray-100 group
+           class="flex items-start flex-1 pl-1 pr-2 py-1.5 rounded text-sm hover:bg-gray-100 group
                   {% if currentDocument is defined and currentDocument and currentDocument.id == document.id %}bg-blue-50 text-blue-700{% else %}text-gray-700{% endif %}">
 
             {# Icone type #}
@@ -62,7 +69,9 @@
     </div>
 
     {% if document.children|length > 0 %}
-        <ul class="space-y-0.5 children-container" id="children-{{ document.id }}">
+        <ul class="space-y-0.5 children-container sortable-list"
+            id="children-{{ document.id }}"
+            data-parent-id="{{ document.id }}">
             {% for child in document.children %}
                 {% include 'session/_document_item.html.twig' with {document: child, level: level + 1} %}
             {% endfor %}
