@@ -4,7 +4,7 @@
     data-sort-order="{{ document.sortOrder }}">
     <div class="flex items-center" style="padding-left: {{ (level * 12) }}px">
         {# Poignee de drag (visible au hover) #}
-        <span class="drag-handle text-gray-400 hover:text-gray-600 mr-0.5 flex-shrink-0"
+        <span class="drag-handle text-gray-400 hover:text-gray-600 flex-shrink-0"
               title="Glisser pour reordonner">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
@@ -31,7 +31,7 @@
            hx-target="#document-content"
            hx-swap="innerHTML"
            hx-push-url="true"
-           class="flex items-start flex-1 px-2 py-1.5 rounded text-sm hover:bg-gray-100 group
+           class="flex items-start flex-1 pl-1 pr-2 py-1.5 rounded text-sm hover:bg-gray-100 group
                   {% if currentDocument is defined and currentDocument and currentDocument.id == document.id %}bg-blue-50 text-blue-700{% else %}text-gray-700{% endif %}">
 
             {# Icone type #}
