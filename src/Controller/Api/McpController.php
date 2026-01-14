@@ -4,6 +4,8 @@ namespace App\Controller\Api;
 
 use App\Application\Command\Annotation\AcknowledgeAnnotationCommand;
 use App\Application\Command\Annotation\AcknowledgeAnnotationHandler;
+use App\Application\Command\Annotation\DeleteAnnotationCommand;
+use App\Application\Command\Annotation\DeleteAnnotationHandler;
 use App\Application\Command\Annotation\RespondAnnotationCommand;
 use App\Application\Command\Annotation\RespondAnnotationHandler;
 use App\Application\Command\Document\CreateDocumentCommand;
@@ -67,6 +69,7 @@ class McpController extends AbstractController
         private readonly UpdateSessionStatusHandler $updateSessionStatusHandler,
         private readonly RespondAnnotationHandler $respondAnnotationHandler,
         private readonly AcknowledgeAnnotationHandler $acknowledgeAnnotationHandler,
+        private readonly DeleteAnnotationHandler $deleteAnnotationHandler,
         private readonly ParticipantValidator $participantValidator,
         private readonly CreateEstimationHandler $createEstimationHandler,
         private readonly ListEstimationsHandler $listEstimationsHandler,
@@ -376,6 +379,21 @@ class McpController extends AbstractController
             $annotation = ($this->acknowledgeAnnotationHandler)($command);
 
             return $this->json($annotation->toArray());
+        } catch (AnnotationNotFoundException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    #[Route('/annotations/{annotationId}', name: 'delete_annotation', methods: ['DELETE'])]
+    public function deleteAnnotation(string $annotationId): JsonResponse
+    {
+        try {
+            $command = new DeleteAnnotationCommand(annotationId: $annotationId);
+            ($this->deleteAnnotationHandler)($command);
+
+            return $this->json(null, Response::HTTP_NO_CONTENT);
         } catch (AnnotationNotFoundException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_NOT_FOUND);
         } catch (\InvalidArgumentException $e) {
