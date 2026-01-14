@@ -92,6 +92,7 @@ Content-Type: application/json
 | `GET` | `/documents/{documentId}/annotations` | Lister les annotations d'un document |
 | `POST` | `/annotations/{annotationId}/respond` | Répondre à une annotation |
 | `POST` | `/annotations/{annotationId}/acknowledge` | Marquer une annotation comme prise en compte |
+| `DELETE` | `/annotations/{annotationId}` | Supprimer une annotation obsolète |
 
 ### Estimations (Planning Poker)
 

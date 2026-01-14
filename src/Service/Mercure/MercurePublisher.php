@@ -75,6 +75,15 @@ class MercurePublisher
         );
     }
 
+    public function publishAnnotationDeleted(string $sessionId, string $annotationId): void
+    {
+        $this->publishToTopics(
+            ["/sessions/{$sessionId}/annotations"],
+            'annotation.deleted',
+            ['id' => $annotationId]
+        );
+    }
+
     public function publishVoteReceived(string $sessionId, string $decisionId, array $voteStats): void
     {
         $this->publishToTopics(

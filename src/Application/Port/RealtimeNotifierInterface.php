@@ -28,6 +28,8 @@ interface RealtimeNotifierInterface
 
     public function notifyAnnotationResolved(string $sessionId, AnnotationResponse $annotation): void;
 
+    public function notifyAnnotationDeleted(string $sessionId, string $annotationId): void;
+
     public function notifyDecisionCreated(string $sessionId, DecisionResponse $decision): void;
 
     public function notifyDecisionUpdated(string $sessionId, DecisionResponse $decision): void;

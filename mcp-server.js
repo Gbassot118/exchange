@@ -236,6 +236,17 @@ const tools = [
     },
   },
   {
+    name: 'delete_annotation',
+    description: 'Delete an annotation that is no longer needed. Use this to clean up resolved annotations that have become obsolete.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        annotation_id: { type: 'string', description: 'Annotation UUID to delete' },
+      },
+      required: ['annotation_id'],
+    },
+  },
+  {
     name: 'create_decision',
     description: 'Create a decision point with options for users to vote on. Use this when presenting technical choices that need team arbitration.',
     inputSchema: {
@@ -601,6 +612,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: JSON.stringify(response.data, null, 2),
           }],
         };
+      }
+
+      case 'delete_annotation': {
+        const response = await apiCall('DELETE', `/api/mcp/annotations/${args.annotation_id}`);
+
+        if (response.status === 204 || response.status === 200) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Annotation ${args.annotation_id} has been deleted.`,
+              }, null, 2),
+            }],
+          };
+        }
+        throw new Error(response.data?.error || 'Failed to delete annotation');
       }
 
       case 'create_decision': {

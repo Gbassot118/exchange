@@ -80,6 +80,11 @@ final readonly class MercureRealtimeNotifier implements RealtimeNotifierInterfac
         );
     }
 
+    public function notifyAnnotationDeleted(string $sessionId, string $annotationId): void
+    {
+        $this->mercurePublisher->publishAnnotationDeleted($sessionId, $annotationId);
+    }
+
     public function notifyDecisionCreated(string $sessionId, DecisionResponse $decision): void
     {
         $decisionArray = $decision->toArray();
