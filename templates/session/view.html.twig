@@ -352,6 +352,13 @@
         refreshAnnotations(data.document_id);
     });
 
+    handleSSEEvent('annotation.deleted', (data) => {
+        const annotationEl = document.getElementById(`annotation-${data.id}`);
+        if (annotationEl) {
+            annotationEl.remove();
+        }
+    });
+
     // Decision events - refresh decisions list for current document
     function refreshDecisions(documentId) {
         const currentDocId = document.body.dataset.currentDocumentId;
